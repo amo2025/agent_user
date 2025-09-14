@@ -17,32 +17,59 @@ export const useAuth = () => {
 
   useEffect(() => {
     checkAuth();
-  }, []);
+  }, []); // 只在组件挂载时执行一次
 
   const checkAuth = async () => {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      setAuthState({ user: null, loading: false, error: null });
-      return;
-    }
-
     try {
+      const token = localStorage.getItem('access_token');
+      console.log('Checking auth, token:', token ? 'exists' : 'not found');
+      
+      if (!token) {
+        setAuthState({ user: null, loading: false, error: null });
+        return;
+      }
+
       const user = await authAPI.getCurrentUser();
+      console.log('Auth check successful, user:', user);
       setAuthState({ user, loading: false, error: null });
     } catch (error) {
+      console.error('Auth check failed:', error);
       localStorage.removeItem('access_token');
-      setAuthState({ user: null, loading: false, error: 'Authentication failed' });
+      setAuthState({ user: null, loading: false, error: null });
     }
   };
 
   const login = async (email: string, password: string) => {
     try {
+      console.log('Attempting login with:', email);
+      setAuthState({ user: null, loading: true, error: null });
+      
       const response = await authAPI.login({ email, password });
-      localStorage.setItem('access_token', response.access_token);
-      await checkAuth();
-      return { success: true };
+      console.log('Login response:', response);
+      
+      if (response && response.access_token) {
+        localStorage.setItem('access_token', response.access_token);
+        console.log('Token saved to localStorage');
+        
+        // 获取用户信息
+        try {
+          const user = await authAPI.getCurrentUser();
+          console.log('User data:', user);
+          setAuthState({ user, loading: false, error: null });
+          return { success: true };
+        } catch (userError) {
+          console.error('Failed to get user info:', userError);
+          // 即使获取用户信息失败，登录也算成功
+          const fallbackUser = { id: 'temp', email, created_at: new Date().toISOString(), last_login: null };
+          setAuthState({ user: fallbackUser, loading: false, error: null });
+          return { success: true };
+        }
+      } else {
+        throw new Error('No access token received');
+      }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || 'Login failed';
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Login failed';
       setAuthState({ user: null, loading: false, error: errorMessage });
       return { success: false, error: errorMessage };
     }

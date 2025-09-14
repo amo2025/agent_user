@@ -5,7 +5,13 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 import ollama
-from langchain.llms import Ollama
+try:
+    from langchain_ollama import OllamaLLM
+except ImportError:
+    try:
+        from langchain_community.llms import Ollama as OllamaLLM
+    except ImportError:
+        from langchain.llms import Ollama as OllamaLLM
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 from langchain.prompts import PromptTemplate
@@ -16,8 +22,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import main app to access active_connections
-from main import active_connections
+# Global variable for active connections
+active_connections = {}
 
 class AgentConfig(BaseModel):
     id: str
@@ -61,8 +67,8 @@ class AgentService:
         import os
         os.makedirs("data", exist_ok=True)
 
-        # Initialize Ollama
-        self.ollama = Ollama(base_url=self.ollama_base_url, model="llama2")
+        # Initialize Ollama with available model
+        self.ollama = OllamaLLM(base_url=self.ollama_base_url, model="gpt-oss:20b")
 
         # Load existing data
         self.agents = self.load_agents()
@@ -446,6 +452,9 @@ Respond with only the JSON configuration, no additional text.
             )
             self.executions[execution_id].logs.append(log)
             self.save_executions()
+            
+            # Import active_connections here to avoid circular imports
+            from main import active_connections
             
             # Send log to all active WebSocket connections for this execution
             log_data = {

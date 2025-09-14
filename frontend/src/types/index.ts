@@ -65,5 +65,41 @@ export interface ExecutionLog {
   metadata?: Record<string, any>;
 }
 
-// Re-export workflow types
+// Re-export workflow types first
 export * from './workflow';
+
+// Workflow API types (using imported types)
+export interface CreateWorkflowRequest {
+  name: string;
+  description?: string;
+  nodes?: import('./workflow').WorkflowNode[];
+  edges?: import('./workflow').WorkflowEdge[];
+  tags?: string[];
+}
+
+export interface UpdateWorkflowRequest {
+  name?: string;
+  description?: string;
+  nodes?: import('./workflow').WorkflowNode[];
+  edges?: import('./workflow').WorkflowEdge[];
+  tags?: string[];
+}
+
+export interface ExecuteWorkflowRequest {
+  inputs: Record<string, any>;
+  mode?: 'run' | 'debug' | 'step';
+  breakpoints?: string[];
+}
+
+export interface WorkflowExecution {
+  id: string;
+  workflow_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  inputs: Record<string, any>;
+  outputs?: Record<string, any>;
+  current_node?: string;
+  executed_nodes: string[];
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}

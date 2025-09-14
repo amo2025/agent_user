@@ -56,10 +56,10 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-4 px-4 sm:py-12 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 sm:space-y-8">
         <div className="text-center">
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-4 sm:mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">
             创建账户
           </h2>
           <p className="mt-2 text-sm text-gray-600">
@@ -67,16 +67,16 @@ const Register = () => {
           </p>
         </div>
 
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>注册</CardTitle>
-            <CardDescription>
+        <Card className="w-full shadow-lg">
+          <CardHeader className="pb-4 sm:pb-6">
+            <CardTitle className="text-xl sm:text-2xl">注册</CardTitle>
+            <CardDescription className="text-sm sm:text-base">
               填写以下信息创建您的账户
             </CardDescription>
           </CardHeader>
 
           <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6">
               {(error || validationError) && (
                 <Alert variant="destructive">
                   <AlertDescription>{error || validationError}</AlertDescription>
@@ -94,7 +94,7 @@ const Register = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="请输入邮箱地址"
-                  className="w-full"
+                  className="w-full h-11 sm:h-10 text-base sm:text-sm"
                 />
               </div>
 
@@ -108,8 +108,8 @@ const Register = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  placeholder="请输入密码（至少8位，包含大小写字母和数字）"
-                  className="w-full"
+                  placeholder="至少8位，包含大小写字母和数字"
+                  className="w-full h-11 sm:h-10 text-base sm:text-sm"
                 />
               </div>
 
@@ -124,23 +124,23 @@ const Register = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   placeholder="请再次输入密码"
-                  className="w-full"
+                  className="w-full h-11 sm:h-10 text-base sm:text-sm"
                 />
               </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col space-y-4">
+            <CardFooter className="flex flex-col space-y-4 px-4 sm:px-6 pb-4 sm:pb-6">
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full h-11 sm:h-10 text-base sm:text-sm font-medium"
                 disabled={isLoading}
               >
                 {isLoading ? '注册中...' : '创建账户'}
               </Button>
 
-              <div className="text-center text-sm text-gray-600">
+              <div className="text-center text-sm sm:text-base text-gray-600">
                 已有账户？{' '}
-                <Link to="/login" className="font-medium text-primary hover:text-primary/80">
+                <Link to="/login" className="font-medium text-primary hover:text-primary/80 underline">
                   立即登录
                 </Link>
               </div>

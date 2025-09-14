@@ -1,94 +1,102 @@
-import api from './api';
-import {
-  Workflow,
-  WorkflowTemplate,
-  CreateWorkflowRequest,
-  UpdateWorkflowRequest,
-  ExecuteWorkflowRequest,
-  WorkflowExecutionResponse,
-  WorkflowExecution,
-  WorkflowValidationResult
-} from '../types';
+import { api } from './api';
+import { Workflow, WorkflowExecution } from '../types/workflow';
 
 export const workflowAPI = {
-  // Workflow CRUD operations
+  // 获取用户工作流列表
   getWorkflows: async (): Promise<Workflow[]> => {
-    const response = await api.get('/workflows');
+    const response = await api.get('/api/workflows/');
     return response.data;
   },
 
+  // 创建工作流
+  createWorkflow: async (workflow: Omit<Workflow, 'id' | 'created_at' | 'updated_at' | 'user_id'>): Promise<Workflow> => {
+    const response = await api.post('/api/workflows/', workflow);
+    return response.data;
+  },
+
+  // 获取特定工作流
   getWorkflow: async (id: string): Promise<Workflow> => {
-    const response = await api.get(`/workflows/${id}`);
+    const response = await api.get(`/api/workflows/${id}`);
     return response.data;
   },
 
-  createWorkflow: async (workflow: CreateWorkflowRequest): Promise<Workflow> => {
-    const response = await api.post('/workflows', workflow);
+  // 更新工作流
+  updateWorkflow: async (id: string, workflow: Partial<Workflow>): Promise<Workflow> => {
+    const response = await api.put(`/api/workflows/${id}`, workflow);
     return response.data;
   },
 
-  updateWorkflow: async (id: string, workflow: UpdateWorkflowRequest): Promise<Workflow> => {
-    const response = await api.put(`/workflows/${id}`, workflow);
-    return response.data;
-  },
-
+  // 删除工作流
   deleteWorkflow: async (id: string): Promise<void> => {
-    await api.delete(`/workflows/${id}`);
+    await api.delete(`/api/workflows/${id}`);
   },
 
-  // Workflow execution
-  executeWorkflow: async (request: ExecuteWorkflowRequest): Promise<WorkflowExecutionResponse> => {
-    const response = await api.post('/workflows/execute', request);
+  // 执行工作流
+  executeWorkflow: async (data: {
+    workflow_id: string;
+    input_data: Record<string, any>;
+    dry_run?: boolean;
+  }): Promise<WorkflowExecution> => {
+    const response = await api.post('/api/workflows/execute', data);
     return response.data;
   },
 
-  getWorkflowExecution: async (executionId: string): Promise<WorkflowExecution> => {
-    const response = await api.get(`/workflow-executions/${executionId}`);
+  // 获取执行状态
+  getExecution: async (id: string): Promise<WorkflowExecution> => {
+    const response = await api.get(`/api/workflows/executions/${id}`);
     return response.data;
   },
 
-  // Workflow validation
-  validateWorkflow: async (workflow: Workflow): Promise<WorkflowValidationResult> => {
-    const response = await api.post('/workflows/validate', workflow);
+  // 获取执行历史
+  getExecutions: async (workflowId?: string): Promise<WorkflowExecution[]> => {
+    const params = workflowId ? { workflow_id: workflowId } : {};
+    const response = await api.get('/api/workflows/executions', { params });
     return response.data;
   },
 
-  // Workflow templates
-  getWorkflowTemplates: async (category?: string): Promise<WorkflowTemplate[]> => {
-    const params = category ? { category } : {};
-    const response = await api.get('/workflow-templates', { params });
+  // 验证工作流
+  validateWorkflow: async (workflow: Partial<Workflow>): Promise<{
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  }> => {
+    const response = await api.post('/api/workflows/validate', workflow);
     return response.data;
   },
 
-  getWorkflowTemplate: async (id: string): Promise<WorkflowTemplate> => {
-    const response = await api.get(`/workflow-templates/${id}`);
+  // 获取工作流模板
+  getTemplates: async (): Promise<Workflow[]> => {
+    const response = await api.get('/api/workflows/templates');
     return response.data;
   },
 
-  useWorkflowTemplate: async (templateId: string, name: string, description?: string): Promise<Workflow> => {
-    const response = await api.post('/workflows/from-template', {
+  // 从模板创建工作流
+  createFromTemplate: async (templateId: string, name: string): Promise<Workflow> => {
+    const response = await api.post('/api/workflows/from-template', {
       template_id: templateId,
-      name,
-      description
+      name
     });
     return response.data;
   },
 
-  // Workflow import/export
-  exportWorkflow: async (id: string, format: 'json' | 'yaml' = 'json'): Promise<any> => {
-    const response = await api.get(`/workflows/${id}/export`, {
-      params: { format }
+  // 导出工作流
+  exportWorkflow: async (id: string, format: 'json' | 'yaml' = 'json'): Promise<Blob> => {
+    const response = await api.get(`/api/workflows/${id}/export`, {
+      params: { format },
+      responseType: 'blob'
     });
     return response.data;
   },
 
-  importWorkflow: async (workflowData: any, format: 'json' | 'yaml' = 'json'): Promise<Workflow> => {
-    const response = await api.post('/workflows/import', {
-      data: workflowData,
-      format
+  // 导入工作流
+  importWorkflow: async (file: File): Promise<Workflow> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/api/workflows/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     });
     return response.data;
   }
 };
-
-export default workflowAPI;

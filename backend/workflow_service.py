@@ -1,22 +1,16 @@
+"""
+工作流业务逻辑服务
+"""
 import json
-import asyncio
-from typing import Dict, List, Any, Optional
-from datetime import datetime
-from pydantic import BaseModel, Field
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from langchain.tools import Tool
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.runnables import RunnableConfig
+import os
 import uuid
-import logging
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
-# Workflow models
 class WorkflowNode(BaseModel):
     id: str
-    type: str
+    type: str  # input, output, agent, condition
     position: Dict[str, float]
     data: Dict[str, Any]
 
@@ -24,10 +18,7 @@ class WorkflowEdge(BaseModel):
     id: str
     source: str
     target: str
-    source_handle: Optional[str] = None
-    target_handle: Optional[str] = None
-    type: Optional[str] = "default"
-    label: Optional[str] = None
+    type: Optional[str] = None
 
 class Workflow(BaseModel):
     id: str
@@ -35,561 +26,246 @@ class Workflow(BaseModel):
     description: str
     nodes: List[WorkflowNode]
     edges: List[WorkflowEdge]
-    user_id: str
     created_at: str
     updated_at: str
-    is_template: bool = False
-    template_category: Optional[str] = None
+    user_id: str
 
 class WorkflowExecution(BaseModel):
     id: str
     workflow_id: str
-    user_id: str
-    status: str = "pending"
-    input_data: Optional[Dict[str, Any]] = None
+    status: str  # pending, running, completed, failed
+    input_data: Dict[str, Any]
     output_data: Optional[Dict[str, Any]] = None
-    node_executions: List[Dict[str, Any]] = Field(default_factory=list)
-    start_time: str
-    end_time: Optional[str] = None
-    error: Optional[str] = None
+    logs: List[str] = []
+    created_at: str
+    completed_at: Optional[str] = None
 
 class WorkflowService:
-    def __init__(self):
-        self.workflows_file = "data/workflows.json"
-        self.workflow_executions_file = "data/workflow_executions.json"
-        self.templates_file = "data/workflow_templates.json"
+    def __init__(self, data_dir: str = "data"):
+        self.data_dir = data_dir
+        self.workflows_file = os.path.join(data_dir, "workflows.json")
+        self.executions_file = os.path.join(data_dir, "workflow_executions.json")
+        self._ensure_data_files()
 
-    def load_workflows(self) -> Dict[str, Workflow]:
-        """Load workflows from JSON file"""
+    def _ensure_data_files(self):
+        """确保数据文件存在"""
+        os.makedirs(self.data_dir, exist_ok=True)
+        
+        if not os.path.exists(self.workflows_file):
+            with open(self.workflows_file, 'w', encoding='utf-8') as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+        
+        if not os.path.exists(self.executions_file):
+            with open(self.executions_file, 'w', encoding='utf-8') as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+
+    def _load_workflows(self) -> List[Dict[str, Any]]:
+        """加载工作流数据"""
         try:
-            with open(self.workflows_file, 'r') as f:
-                data = json.load(f)
-                return {k: Workflow(**v) for k, v in data.items()}
-        except FileNotFoundError:
-            return {}
-        except Exception as e:
-            logger.error(f"Error loading workflows: {e}")
-            return {}
+            with open(self.workflows_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
 
-    def save_workflows(self, workflows: Dict[str, Workflow]):
-        """Save workflows to JSON file"""
+    def _save_workflows(self, workflows: List[Dict[str, Any]]):
+        """保存工作流数据"""
+        with open(self.workflows_file, 'w', encoding='utf-8') as f:
+            json.dump(workflows, f, ensure_ascii=False, indent=2)
+
+    def _load_executions(self) -> List[Dict[str, Any]]:
+        """加载执行记录数据"""
         try:
-            with open(self.workflows_file, 'w') as f:
-                json.dump({k: v.dict() for k, v in workflows.items()}, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving workflows: {e}")
-            raise
+            with open(self.executions_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
 
-    def load_workflow_executions(self) -> Dict[str, WorkflowExecution]:
-        """Load workflow executions from JSON file"""
-        try:
-            with open(self.workflow_executions_file, 'r') as f:
-                data = json.load(f)
-                return {k: WorkflowExecution(**v) for k, v in data.items()}
-        except FileNotFoundError:
-            return {}
-        except Exception as e:
-            logger.error(f"Error loading workflow executions: {e}")
-            return {}
-
-    def save_workflow_executions(self, executions: Dict[str, WorkflowExecution]):
-        """Save workflow executions to JSON file"""
-        try:
-            with open(self.workflow_executions_file, 'w') as f:
-                json.dump({k: v.dict() for k, v in executions.items()}, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving workflow executions: {e}")
-            raise
-
-    def create_workflow(self, workflow_data: Dict[str, Any], user_id: str) -> Workflow:
-        """Create a new workflow"""
-        workflows = self.load_workflows()
-
-        workflow_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
-
-        workflow = Workflow(
-            id=workflow_id,
-            name=workflow_data["name"],
-            description=workflow_data.get("description", ""),
-            nodes=workflow_data.get("nodes", []),
-            edges=workflow_data.get("edges", []),
-            user_id=user_id,
-            created_at=now,
-            updated_at=now,
-            is_template=workflow_data.get("is_template", False),
-            template_category=workflow_data.get("template_category")
-        )
-
-        workflows[workflow_id] = workflow
-        self.save_workflows(workflows)
-
-        logger.info(f"Created workflow {workflow_id} for user {user_id}")
-        return workflow
-
-    def get_workflow(self, workflow_id: str, user_id: str) -> Optional[Workflow]:
-        """Get a specific workflow by ID"""
-        workflows = self.load_workflows()
-        workflow = workflows.get(workflow_id)
-
-        if workflow and workflow.user_id == user_id:
-            return workflow
-        return None
+    def _save_executions(self, executions: List[Dict[str, Any]]):
+        """保存执行记录数据"""
+        with open(self.executions_file, 'w', encoding='utf-8') as f:
+            json.dump(executions, f, ensure_ascii=False, indent=2)
 
     def get_user_workflows(self, user_id: str) -> List[Workflow]:
-        """Get all workflows for a user"""
-        workflows = self.load_workflows()
-        return [w for w in workflows.values() if w.user_id == user_id]
+        """获取用户的工作流列表"""
+        workflows = self._load_workflows()
+        user_workflows = [w for w in workflows if w.get('user_id') == user_id]
+        return [Workflow(**w) for w in user_workflows]
 
-    def update_workflow(self, workflow_id: str, workflow_data: Dict[str, Any], user_id: str) -> Optional[Workflow]:
-        """Update an existing workflow"""
-        workflows = self.load_workflows()
-        workflow = workflows.get(workflow_id)
+    def create_workflow(self, user_id: str, name: str, description: str = "", 
+                       nodes: List[Dict] = None, edges: List[Dict] = None) -> Workflow:
+        """创建新工作流"""
+        workflow_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        workflow_data = {
+            "id": workflow_id,
+            "name": name,
+            "description": description,
+            "nodes": nodes or [],
+            "edges": edges or [],
+            "created_at": now,
+            "updated_at": now,
+            "user_id": user_id
+        }
+        
+        workflows = self._load_workflows()
+        workflows.append(workflow_data)
+        self._save_workflows(workflows)
+        
+        return Workflow(**workflow_data)
 
-        if not workflow or workflow.user_id != user_id:
-            return None
+    def get_workflow(self, workflow_id: str, user_id: str) -> Optional[Workflow]:
+        """获取特定工作流"""
+        workflows = self._load_workflows()
+        for w in workflows:
+            if w.get('id') == workflow_id and w.get('user_id') == user_id:
+                return Workflow(**w)
+        return None
 
-        # Update workflow fields
-        if "name" in workflow_data:
-            workflow.name = workflow_data["name"]
-        if "description" in workflow_data:
-            workflow.description = workflow_data["description"]
-        if "nodes" in workflow_data:
-            workflow.nodes = [WorkflowNode(**node) for node in workflow_data["nodes"]]
-        if "edges" in workflow_data:
-            workflow.edges = [WorkflowEdge(**edge) for edge in workflow_data["edges"]]
-
-        workflow.updated_at = datetime.now().isoformat()
-
-        workflows[workflow_id] = workflow
-        self.save_workflows(workflows)
-
-        logger.info(f"Updated workflow {workflow_id} for user {user_id}")
-        return workflow
+    def update_workflow(self, workflow_id: str, user_id: str, updates: Dict[str, Any]) -> Optional[Workflow]:
+        """更新工作流"""
+        workflows = self._load_workflows()
+        
+        for i, w in enumerate(workflows):
+            if w.get('id') == workflow_id and w.get('user_id') == user_id:
+                # 更新数据
+                workflows[i].update(updates)
+                workflows[i]['updated_at'] = datetime.now().isoformat()
+                
+                self._save_workflows(workflows)
+                return Workflow(**workflows[i])
+        
+        return None
 
     def delete_workflow(self, workflow_id: str, user_id: str) -> bool:
-        """Delete a workflow"""
-        workflows = self.load_workflows()
-        workflow = workflows.get(workflow_id)
+        """删除工作流"""
+        workflows = self._load_workflows()
+        original_length = len(workflows)
+        
+        workflows = [w for w in workflows 
+                    if not (w.get('id') == workflow_id and w.get('user_id') == user_id)]
+        
+        if len(workflows) < original_length:
+            self._save_workflows(workflows)
+            return True
+        
+        return False
 
-        if not workflow or workflow.user_id != user_id:
-            return False
-
-        del workflows[workflow_id]
-        self.save_workflows(workflows)
-
-        logger.info(f"Deleted workflow {workflow_id} for user {user_id}")
-        return True
-
-    def validate_workflow(self, workflow: Workflow) -> Dict[str, Any]:
-        """Validate workflow structure and logic"""
+    def validate_workflow(self, workflow_data: Dict[str, Any]) -> Dict[str, Any]:
+        """验证工作流结构"""
         errors = []
         warnings = []
-
-        # Check for orphaned nodes
-        connected_node_ids = set()
-        for edge in workflow.edges:
-            connected_node_ids.add(edge.source)
-            connected_node_ids.add(edge.target)
-
-        for node in workflow.nodes:
-            if node.id not in connected_node_ids and node.type != "input":
-                warnings.append({
-                    "type": "node",
-                    "node_id": node.id,
-                    "message": "Node is not connected to any other nodes",
-                    "suggestion": "Connect this node to other nodes or remove it"
-                })
-
-        # Check for input/output nodes
-        input_nodes = [n for n in workflow.nodes if n.type == "input"]
-        output_nodes = [n for n in workflow.nodes if n.type == "output"]
-
-        if not input_nodes:
-            errors.append({
-                "type": "flow",
-                "message": "Workflow must have at least one input node",
-                "severity": "error"
-            })
-
-        if not output_nodes:
-            warnings.append({
-                "type": "flow",
-                "message": "Workflow has no output nodes",
-                "suggestion": "Consider adding output nodes to capture results"
-            })
-
-        # Check for cycles (simplified check)
-        has_cycles = self._check_for_cycles(workflow.nodes, workflow.edges)
-        if has_cycles:
-            errors.append({
-                "type": "flow",
-                "message": "Workflow contains cycles which may cause infinite loops",
-                "severity": "error"
-            })
-
+        
+        nodes = workflow_data.get('nodes', [])
+        edges = workflow_data.get('edges', [])
+        
+        # 检查节点
+        if not nodes:
+            errors.append("工作流必须包含至少一个节点")
+        
+        node_ids = set()
+        input_nodes = 0
+        output_nodes = 0
+        
+        for node in nodes:
+            node_id = node.get('id')
+            node_type = node.get('type')
+            
+            if not node_id:
+                errors.append("节点必须有ID")
+                continue
+                
+            if node_id in node_ids:
+                errors.append(f"重复的节点ID: {node_id}")
+            node_ids.add(node_id)
+            
+            if node_type == 'input':
+                input_nodes += 1
+            elif node_type == 'output':
+                output_nodes += 1
+        
+        # 检查是否有输入和输出节点
+        if input_nodes == 0:
+            warnings.append("建议添加至少一个输入节点")
+        if output_nodes == 0:
+            warnings.append("建议添加至少一个输出节点")
+        
+        # 检查边连接
+        for edge in edges:
+            source = edge.get('source')
+            target = edge.get('target')
+            
+            if source not in node_ids:
+                errors.append(f"边的源节点不存在: {source}")
+            if target not in node_ids:
+                errors.append(f"边的目标节点不存在: {target}")
+        
         return {
-            "is_valid": len(errors) == 0,
+            "valid": len(errors) == 0,
             "errors": errors,
             "warnings": warnings
         }
 
-    def _check_for_cycles(self, nodes: List[WorkflowNode], edges: List[WorkflowEdge]) -> bool:
-        """Check if the workflow graph contains cycles"""
-        adjacency = {}
-        visited = set()
-        recursion_stack = set()
-
-        # Build adjacency list
-        for node in nodes:
-            adjacency[node.id] = []
-
-        for edge in edges:
-            adjacency[edge.source].append(edge.target)
-
-        def has_cycle_dfs(node_id: str) -> bool:
-            if node_id in recursion_stack:
-                return True
-            if node_id in visited:
-                return False
-
-            visited.add(node_id)
-            recursion_stack.add(node_id)
-
-            neighbors = adjacency.get(node_id, [])
-            for neighbor in neighbors:
-                if has_cycle_dfs(neighbor):
-                    return True
-
-            recursion_stack.remove(node_id)
-            return False
-
-        for node in nodes:
-            if node.id not in visited:
-                if has_cycle_dfs(node.id):
-                    return True
-
-        return False
-
-    async def execute_workflow(self, workflow_id: str, user_id: str, input_data: Dict[str, Any] = None, dry_run: bool = False) -> WorkflowExecution:
-        """Execute a workflow"""
+    def execute_workflow(self, workflow_id: str, user_id: str, input_data: Dict[str, Any], 
+                        dry_run: bool = False) -> WorkflowExecution:
+        """执行工作流"""
+        execution_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        # 获取工作流
         workflow = self.get_workflow(workflow_id, user_id)
         if not workflow:
-            raise ValueError("Workflow not found or access denied")
-
-        # Validate workflow before execution
-        validation_result = self.validate_workflow(workflow)
-        if not validation_result["is_valid"]:
-            raise ValueError(f"Workflow validation failed: {validation_result['errors']}")
-
-        # Create execution record
-        execution_id = str(uuid.uuid4())
-        execution = WorkflowExecution(
-            id=execution_id,
-            workflow_id=workflow_id,
-            user_id=user_id,
-            status="running",
-            input_data=input_data or {},
-            start_time=datetime.now().isoformat()
-        )
-
-        # Save execution record
-        executions = self.load_workflow_executions()
-        executions[execution_id] = execution
-        self.save_workflow_executions(executions)
-
-        if dry_run:
-            execution.status = "completed"
-            execution.end_time = datetime.now().isoformat()
-            executions[execution_id] = execution
-            self.save_workflow_executions(executions)
-            return execution
-
-        # Execute workflow in background
-        asyncio.create_task(self._execute_workflow_async(workflow, execution))
-
-        logger.info(f"Started workflow execution {execution_id} for workflow {workflow_id}")
-        return execution
-
-    async def _execute_workflow_async(self, workflow: Workflow, execution: WorkflowExecution):
-        """Execute workflow asynchronously"""
-        try:
-            # Build execution graph
-            graph = self._build_execution_graph(workflow)
-
-            # Execute the graph
-            result = await graph.ainvoke({
-                "input": execution.input_data,
-                "execution_id": execution.id
-            })
-
-            # Update execution with results
-            execution.status = "completed"
-            execution.output_data = result.get("output", {})
-            execution.end_time = datetime.now().isoformat()
-
-            logger.info(f"Completed workflow execution {execution.id}")
-
-        except Exception as e:
-            logger.error(f"Workflow execution {execution.id} failed: {e}")
-            execution.status = "failed"
-            execution.error = str(e)
-            execution.end_time = datetime.now().isoformat()
-
-        # Save updated execution
-        executions = self.load_workflow_executions()
-        executions[execution.id] = execution
-        self.save_workflow_executions(executions)
+            raise ValueError(f"工作流不存在: {workflow_id}")
         
-        # Notify via WebSocket if there are connections for this execution
-        await self._notify_execution_update(execution)
+        # 创建执行记录
+        execution_data = {
+            "id": execution_id,
+            "workflow_id": workflow_id,
+            "status": "pending",
+            "input_data": input_data,
+            "output_data": None,
+            "logs": [f"[{now}] 工作流执行开始"],
+            "created_at": now,
+            "completed_at": None
+        }
+        
+        if dry_run:
+            execution_data["status"] = "completed"
+            execution_data["output_data"] = {"message": "干运行完成，未实际执行"}
+            execution_data["logs"].append(f"[{now}] 干运行模式，跳过实际执行")
+            execution_data["completed_at"] = now
+        else:
+            # TODO: 实现实际的工作流执行逻辑
+            execution_data["status"] = "running"
+            execution_data["logs"].append(f"[{now}] 开始执行工作流节点")
+        
+        # 保存执行记录
+        executions = self._load_executions()
+        executions.append(execution_data)
+        self._save_executions(executions)
+        
+        return WorkflowExecution(**execution_data)
 
-    async def _notify_execution_update(self, execution: WorkflowExecution):
-        """Notify WebSocket connections about execution updates"""
-        try:
-            from main import active_connections
-            
-            # Find all connections for this execution_id
-            connections_to_remove = []
-            for connection_id, connection_data in active_connections.items():
-                if connection_data.get("execution_id") == execution.id:
-                    try:
-                        await connection_data["websocket"].send_json({
-                            "type": "workflow_update",
-                            "data": {
-                                "execution_id": execution.id,
-                                "status": execution.status,
-                                "output_data": execution.output_data,
-                                "error": execution.error,
-                                "end_time": execution.end_time
-                            }
-                        })
-                    except Exception as e:
-                        logger.error(f"Error sending update to WebSocket: {e}")
-                        connections_to_remove.append(connection_id)
-            
-            # Remove broken connections
-            for connection_id in connections_to_remove:
-                if connection_id in active_connections:
-                    del active_connections[connection_id]
-        except Exception as e:
-            logger.error(f"Error notifying execution update: {e}")
-
-    def _build_execution_graph(self, workflow: Workflow) -> StateGraph:
-        """Build LangGraph execution graph from workflow"""
-        # Define state schema
-        class WorkflowState(BaseModel):
-            input: Dict[str, Any] = {}
-            output: Dict[str, Any] = {}
-            node_results: Dict[str, Any] = {}
-            execution_id: str
-
-        # Create graph
-        workflow_graph = StateGraph(WorkflowState)
-
-        # Add nodes
-        for node in workflow.nodes:
-            if node.type == "input":
-                workflow_graph.add_node(node.id, self._create_input_node(node))
-            elif node.type == "output":
-                workflow_graph.add_node(node.id, self._create_output_node(node))
-            elif node.type == "agent":
-                workflow_graph.add_node(node.id, self._create_agent_node(node))
-            elif node.type == "condition":
-                workflow_graph.add_node(node.id, self._create_condition_node(node))
-
-        # Add edges
-        for edge in workflow.edges:
-            workflow_graph.add_edge(edge.source, edge.target)
-
-        # Set entry and exit points
-        input_nodes = [n for n in workflow.nodes if n.type == "input"]
-        output_nodes = [n for n in workflow.nodes if n.type == "output"]
-
-        if input_nodes:
-            workflow_graph.set_entry_point(input_nodes[0].id)
-
-        if output_nodes:
-            for output_node in output_nodes:
-                workflow_graph.add_edge(output_node.id, END)
-
-        return workflow_graph.compile()
-
-    def _create_input_node(self, node: WorkflowNode):
-        """Create input node function"""
-        async def input_node_function(state: Dict[str, Any]) -> Dict[str, Any]:
-            return {
-                "node_results": {
-                    **state.get("node_results", {}),
-                    node.id: state.get("input", {})
-                }
-            }
-        return input_node_function
-
-    def _create_output_node(self, node: WorkflowNode):
-        """Create output node function"""
-        async def output_node_function(state: Dict[str, Any]) -> Dict[str, Any]:
-            node_data = node.data
-            output_key = node_data.get("label", node.id)
-
-            # Collect inputs from connected nodes
-            # In a more complete implementation, you would trace the actual data flow
-            # For now, we'll collect all node results
-            node_results = state.get("node_results", {})
-            
-            # Filter results to only include results from connected nodes
-            # This is a simplified approach - in a full implementation you would
-            # trace the actual graph connections to determine which nodes feed into this one
-            result = node_results
-
-            return {
-                "output": {
-                    **state.get("output", {}),
-                    output_key: result
-                }
-            }
-        return output_node_function
-
-    def _create_agent_node(self, node: WorkflowNode):
-        """Create agent node function"""
-        async def agent_node_function(state: Dict[str, Any]) -> Dict[str, Any]:
-            # Integrate with the existing agent execution system
-            from agent_service import agent_service
-            import asyncio
-            
-            try:
-                # Get agent ID from node data
-                agent_id = node.data.get("agent_id")
-                if not agent_id:
-                    raise ValueError("Agent ID not specified in node data")
-                
-                # Get agent configuration
-                agent = agent_service.get_agent(agent_id)
-                if not agent:
-                    raise ValueError(f"Agent {agent_id} not found")
-                
-                # Prepare input for agent execution
-                # For now, we'll use a simple input, but in a real implementation
-                # this would come from the workflow state or node configuration
-                input_text = "Process the workflow task"
-                
-                # Get previous node results to use as context
-                node_results = state.get("node_results", {})
-                if node_results:
-                    input_text += f"\nPrevious results: {node_results}"
-                
-                # Create execution request
-                from agent_service import ExecutionRequest
-                execution_request = ExecutionRequest(
-                    agent_id=agent_id,
-                    input=input_text,
-                    parameters=agent.parameters or {}
-                )
-                
-                # Execute agent
-                execution = await agent_service.execute_agent(execution_request)
-                
-                # Wait for completion (in a real implementation, you might want to handle this differently)
-                # For now, we'll simulate waiting
-                await asyncio.sleep(1)
-                
-                # Get execution result
-                execution_result = agent_service.get_execution(execution.id)
-                
-                result = {
-                    "agent_id": agent_id,
-                    "model": agent.model,
-                    "status": execution_result.status if execution_result else "completed",
-                    "result": execution_result.result if execution_result else "Agent processing completed",
-                    "execution_id": execution.id
-                }
-
-            except Exception as e:
-                result = {
-                    "agent_id": node.data.get("agent_id"),
-                    "status": "failed",
-                    "error": str(e)
-                }
-
-            return {
-                "node_results": {
-                    **state.get("node_results", {}),
-                    node.id: result
-                }
-            }
-        return agent_node_function
-
-    def _create_condition_node(self, node: WorkflowNode):
-        """Create condition node function"""
-        async def condition_node_function(state: Dict[str, Any]) -> Dict[str, Any]:
-            # Evaluate condition and route to appropriate branch
-            condition_type = node.data.get("condition_type", "if")
-            condition_expression = node.data.get("condition_expression", "")
-            
-            try:
-                # Get node results for condition evaluation
-                node_results = state.get("node_results", {})
-                
-                # Simple condition evaluation
-                # In a production implementation, you would use a proper expression evaluator
-                branch = "false"  # Default branch
-                
-                if condition_expression:
-                    # Check if condition contains "true" or evaluates to true
-                    if "true" in condition_expression.lower():
-                        branch = "true"
-                    elif "false" in condition_expression.lower():
-                        branch = "false"
-                    else:
-                        # Try to evaluate as a boolean expression
-                        try:
-                            # Simple evaluation - in a real implementation, use a proper expression parser
-                            if condition_expression.strip().lower() in ["1", "yes", "y", "true"]:
-                                branch = "true"
-                            elif condition_expression.strip().lower() in ["0", "no", "n", "false"]:
-                                branch = "false"
-                            else:
-                                # Try numeric evaluation
-                                try:
-                                    value = float(condition_expression)
-                                    branch = "true" if value > 0 else "false"
-                                except ValueError:
-                                    # If all else fails, default to true branch
-                                    branch = "true"
-                        except:
-                            # If evaluation fails, default to true branch
-                            branch = "true"
-                else:
-                    # If no condition specified, default to true
-                    branch = "true"
-
-                result = {"branch": branch}
-
-            except Exception as e:
-                # If condition evaluation fails, default to true branch
-                result = {"branch": "true", "error": str(e)}
-
-            return {
-                "node_results": {
-                    **state.get("node_results", {}),
-                    node.id: result
-                }
-            }
-        return condition_node_function
-
-    def get_workflow_execution(self, execution_id: str, user_id: str) -> Optional[WorkflowExecution]:
-        """Get workflow execution by ID"""
-        executions = self.load_workflow_executions()
-        execution = executions.get(execution_id)
-
-        if execution and execution.user_id == user_id:
-            return execution
+    def get_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
+        """获取执行记录"""
+        executions = self._load_executions()
+        for e in executions:
+            if e.get('id') == execution_id:
+                return WorkflowExecution(**e)
         return None
 
-    def get_user_workflow_executions(self, user_id: str) -> List[WorkflowExecution]:
-        """Get all workflow executions for a user"""
-        executions = self.load_workflow_executions()
-        return [e for e in executions.values() if e.user_id == user_id]
+    def get_user_executions(self, user_id: str, workflow_id: str = None) -> List[WorkflowExecution]:
+        """获取用户的执行历史"""
+        executions = self._load_executions()
+        user_workflows = [w.id for w in self.get_user_workflows(user_id)]
+        
+        user_executions = []
+        for e in executions:
+            if e.get('workflow_id') in user_workflows:
+                if workflow_id is None or e.get('workflow_id') == workflow_id:
+                    user_executions.append(WorkflowExecution(**e))
+        
+        return sorted(user_executions, key=lambda x: x.created_at, reverse=True)
 
-# Global workflow service instance
+# 全局工作流服务实例
 workflow_service = WorkflowService()

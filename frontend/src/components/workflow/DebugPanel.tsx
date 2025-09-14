@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, CornerDownRight, CornerRightDown, Stop, Bug, X, Trash2 } from 'lucide-react';
+import { Play, Pause, CornerDownRight, CornerRightDown, X, Bug, Trash2, Square } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -20,7 +20,6 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
     executionMode,
     currentExecutionId,
     executedNodes,
-    nodes,
     setIsExecuting,
     setIsDebugging,
     setExecutionMode,
@@ -68,7 +67,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
 
     try {
       // Start workflow execution in debug mode
-      const response = await workflowAPI.executeWorkflow(currentWorkflow.id, {}, 'debug');
+      const response = await workflowAPI.executeWorkflow({ inputs: {} });
       setCurrentExecutionId(response.execution_id);
       setIsExecuting(true);
 
@@ -114,7 +113,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
 
       addLog({
         nodeId: nextNode,
-        nodeName: nodes.find(n => n.id === nextNode)?.data?.name || nextNode,
+        nodeName: currentWorkflow.nodes.find(n => n.id === nextNode)?.data?.name || nextNode,
         status: 'executing'
       });
 
@@ -125,7 +124,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
 
         addLog({
           nodeId: nextNode,
-          nodeName: nodes.find(n => n.id === nextNode)?.data?.name || nextNode,
+          nodeName: currentWorkflow.nodes.find(n => n.id === nextNode)?.data?.name || nextNode,
           status: 'completed',
           data: { result: 'Step executed successfully' }
         });
@@ -248,7 +247,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
                   variant="destructive"
                   className="flex items-center gap-1"
                 >
-                  <Stop className="h-3 w-3" />
+                  <Square className="h-3 w-3" />
                   停止
                 </Button>
               </>
@@ -263,7 +262,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium">断点管理</h4>
             <Button
-              size="xs"
+              size="sm"
               variant="ghost"
               onClick={clearAllBreakpoints}
               className="flex items-center gap-1"
@@ -278,7 +277,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
           {breakpointNodes.length > 0 && (
             <div className="space-y-1 max-h-20 overflow-y-auto">
               {breakpointNodes.map(nodeId => {
-                const node = nodes.find(n => n.id === nodeId);
+                const node = currentWorkflow?.nodes.find(n => n.id === nodeId);
                 return (
                   <div key={nodeId} className="flex items-center gap-2 text-xs">
                     <div className="w-2 h-2 bg-red-500 rounded-full" />
@@ -315,7 +314,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
               <div className="flex justify-between text-xs">
                 <span>当前节点:</span>
                 <span className="text-muted-foreground">
-                  {nodes.find(n => n.id === currentStepNode)?.data?.name || currentStepNode}
+                  {currentWorkflow?.nodes.find(n => n.id === currentStepNode)?.data?.name || currentStepNode}
                 </span>
               </div>
             )}

@@ -66,6 +66,15 @@ export const agentAPI = {
     return response.data;
   },
 
+  updateAgent: async (id: string, data: Partial<Agent>): Promise<Agent> => {
+    const response = await api.put(`/agents/${id}`, data);
+    return response.data;
+  },
+
+  deleteAgent: async (id: string): Promise<void> => {
+    await api.delete(`/agents/${id}`);
+  },
+
   executeAgent: async (request: ExecutionRequest): Promise<ExecutionResponse> => {
     const response = await api.post('/agents/execute', request);
     return response.data;

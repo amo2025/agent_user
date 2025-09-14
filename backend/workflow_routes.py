@@ -1,503 +1,294 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
-from datetime import datetime
-import uuid
+"""
+工作流API路由
+"""
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
 from auth_utils import get_current_user, User
 from workflow_service import workflow_service, Workflow, WorkflowExecution
-from agent_service import agent_service
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
-# Request/Response models
+# 请求模型
 class CreateWorkflowRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    description: str = Field(default="", max_length=500)
-    nodes: List[Dict[str, Any]] = Field(default_factory=list)
-    edges: List[Dict[str, Any]] = Field(default_factory=list)
-    is_template: bool = False
-    template_category: Optional[str] = None
+    name: str
+    description: str = ""
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
 
 class UpdateWorkflowRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
+    name: Optional[str] = None
+    description: Optional[str] = None
     nodes: Optional[List[Dict[str, Any]]] = None
     edges: Optional[List[Dict[str, Any]]] = None
 
 class ExecuteWorkflowRequest(BaseModel):
     workflow_id: str
-    input_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    input_data: Dict[str, Any]
     dry_run: bool = False
 
-class WorkflowResponse(BaseModel):
-    id: str
+class ValidateWorkflowRequest(BaseModel):
     name: str
-    description: str
+    description: str = ""
     nodes: List[Dict[str, Any]]
     edges: List[Dict[str, Any]]
-    user_id: str
-    created_at: str
-    updated_at: str
-    is_template: bool
-    template_category: Optional[str] = None
 
-class WorkflowExecutionResponse(BaseModel):
-    execution_id: str
-    status: str
-    message: Optional[str] = None
+class CreateFromTemplateRequest(BaseModel):
+    template_id: str
+    name: str
 
-class WorkflowValidationResponse(BaseModel):
-    is_valid: bool
-    errors: List[Dict[str, Any]]
-    warnings: List[Dict[str, Any]]
-
-# Workflow CRUD endpoints
-@router.get("/", response_model=List[WorkflowResponse])
+# 工作流管理API
+@router.get("/", response_model=List[Workflow])
 async def get_workflows(current_user: User = Depends(get_current_user)):
-    """Get all workflows for the current user"""
+    """获取用户工作流列表"""
     try:
         workflows = workflow_service.get_user_workflows(current_user.id)
-        return [WorkflowResponse(**workflow.dict()) for workflow in workflows]
+        return workflows
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve workflows: {str(e)}"
+            detail=f"获取工作流列表失败: {str(e)}"
         )
 
-@router.get("/{workflow_id}", response_model=WorkflowResponse)
-async def get_workflow(workflow_id: str, current_user: User = Depends(get_current_user)):
-    """Get a specific workflow by ID"""
-    workflow = workflow_service.get_workflow(workflow_id, current_user.id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found or access denied"
-        )
-    return WorkflowResponse(**workflow.dict())
-
-@router.post("/", response_model=WorkflowResponse)
+@router.post("/", response_model=Workflow)
 async def create_workflow(
     request: CreateWorkflowRequest,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new workflow"""
+    """创建工作流"""
     try:
-        workflow_data = request.dict()
-        workflow = workflow_service.create_workflow(workflow_data, current_user.id)
-        return WorkflowResponse(**workflow.dict())
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+        workflow = workflow_service.create_workflow(
+            user_id=current_user.id,
+            name=request.name,
+            description=request.description,
+            nodes=request.nodes,
+            edges=request.edges
         )
+        return workflow
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create workflow: {str(e)}"
+            detail=f"创建工作流失败: {str(e)}"
         )
 
-@router.put("/{workflow_id}", response_model=WorkflowResponse)
+@router.get("/{workflow_id}", response_model=Workflow)
+async def get_workflow(
+    workflow_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """获取特定工作流"""
+    workflow = workflow_service.get_workflow(workflow_id, current_user.id)
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="工作流不存在"
+        )
+    return workflow
+
+@router.put("/{workflow_id}", response_model=Workflow)
 async def update_workflow(
     workflow_id: str,
     request: UpdateWorkflowRequest,
     current_user: User = Depends(get_current_user)
 ):
-    """Update an existing workflow"""
-    try:
-        workflow_data = request.dict(exclude_unset=True)
-        workflow = workflow_service.update_workflow(workflow_id, workflow_data, current_user.id)
-        if not workflow:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workflow not found or access denied"
-            )
-        return WorkflowResponse(**workflow.dict())
-    except ValueError as e:
+    """更新工作流"""
+    updates = request.dict(exclude_unset=True)
+    workflow = workflow_service.update_workflow(workflow_id, current_user.id, updates)
+    if not workflow:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="工作流不存在"
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update workflow: {str(e)}"
-        )
+    return workflow
 
 @router.delete("/{workflow_id}")
-async def delete_workflow(workflow_id: str, current_user: User = Depends(get_current_user)):
-    """Delete a workflow"""
+async def delete_workflow(
+    workflow_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """删除工作流"""
     success = workflow_service.delete_workflow(workflow_id, current_user.id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found or access denied"
+            detail="工作流不存在"
         )
-    return {"message": "Workflow deleted successfully"}
+    return {"message": "工作流已删除"}
 
-# Workflow execution endpoints
-@router.post("/execute", response_model=WorkflowExecutionResponse)
+# 工作流执行API
+@router.post("/execute", response_model=WorkflowExecution)
 async def execute_workflow(
     request: ExecuteWorkflowRequest,
     current_user: User = Depends(get_current_user)
 ):
-    """Execute a workflow"""
+    """执行工作流"""
     try:
-        execution = await workflow_service.execute_workflow(
+        execution = workflow_service.execute_workflow(
             workflow_id=request.workflow_id,
             user_id=current_user.id,
             input_data=request.input_data,
             dry_run=request.dry_run
         )
-        return WorkflowExecutionResponse(
-            execution_id=execution.id,
-            status=execution.status,
-            message="Workflow execution started"
-        )
+        return execution
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute workflow: {str(e)}"
+            detail=f"执行工作流失败: {str(e)}"
         )
 
-@router.get("/executions/{execution_id}")
-async def get_workflow_execution(
-    execution_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """Get workflow execution details"""
-    execution = workflow_service.get_workflow_execution(execution_id, current_user.id)
+@router.get("/executions/{execution_id}", response_model=WorkflowExecution)
+async def get_execution(execution_id: str):
+    """获取执行状态"""
+    execution = workflow_service.get_execution(execution_id)
     if not execution:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow execution not found or access denied"
+            detail="执行记录不存在"
         )
-    return execution.dict()
+    return execution
 
-@router.get("/executions", response_model=List[Dict[str, Any]])
-async def get_workflow_executions(current_user: User = Depends(get_current_user)):
-    """Get all workflow executions for the current user"""
-    try:
-        executions = workflow_service.get_user_workflow_executions(current_user.id)
-        return [execution.dict() for execution in executions]
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve workflow executions: {str(e)}"
-        )
-
-# Workflow validation endpoint
-@router.post("/validate", response_model=WorkflowValidationResponse)
-async def validate_workflow(workflow: Dict[str, Any], current_user: User = Depends(get_current_user)):
-    """Validate a workflow structure"""
-    try:
-        workflow_obj = Workflow(**workflow)
-        validation_result = workflow_service.validate_workflow(workflow_obj)
-        return WorkflowValidationResponse(**validation_result)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid workflow data: {str(e)}"
-        )
-
-# Workflow templates endpoints
-@router.get("/templates", response_model=List[Dict[str, Any]])
-async def get_workflow_templates(category: Optional[str] = None):
-    """Get available workflow templates"""
-    try:
-        # Load templates from file or use default templates
-        templates_file = "data/workflow_templates.json"
-        default_templates = [
-            {
-                "id": "template-1",
-                "name": "Simple Chat Bot",
-                "description": "A basic chat bot workflow",
-                "category": "chat",
-                "difficulty": "beginner",
-                "nodes": [
-                    {
-                        "id": "input-1",
-                        "type": "input",
-                        "position": {"x": 100, "y": 100},
-                        "data": {"label": "User Input", "input_type": "text"}
-                    },
-                    {
-                        "id": "agent-1",
-                        "type": "agent",
-                        "position": {"x": 300, "y": 100},
-                        "data": {"label": "Chat Agent", "agent_config": {"model": "llama2", "temperature": 0.7}}
-                    },
-                    {
-                        "id": "output-1",
-                        "type": "output",
-                        "position": {"x": 500, "y": 100},
-                        "data": {"label": "Response", "output_type": "text"}
-                    }
-                ],
-                "edges": [
-                    {"id": "edge-1", "source": "input-1", "target": "agent-1"},
-                    {"id": "edge-2", "source": "agent-1", "target": "output-1"}
-                ],
-                "tags": ["chat", "agent", "basic"],
-                "usage_count": 0,
-                "rating": 5.0,
-                "created_at": datetime.now().isoformat(),
-                "author": "System"
-            },
-            {
-                "id": "template-2",
-                "name": "Document Analysis",
-                "description": "Analyze documents with AI",
-                "category": "analysis",
-                "difficulty": "intermediate",
-                "nodes": [
-                    {
-                        "id": "input-1",
-                        "type": "input",
-                        "position": {"x": 100, "y": 100},
-                        "data": {"label": "Document Input", "input_type": "file"}
-                    },
-                    {
-                        "id": "agent-1",
-                        "type": "agent",
-                        "position": {"x": 300, "y": 100},
-                        "data": {"label": "Analysis Agent", "agent_config": {"model": "llama2", "temperature": 0.3}}
-                    },
-                    {
-                        "id": "output-1",
-                        "type": "output",
-                        "position": {"x": 500, "y": 100},
-                        "data": {"label": "Analysis Result", "output_type": "json"}
-                    }
-                ],
-                "edges": [
-                    {"id": "edge-1", "source": "input-1", "target": "agent-1"},
-                    {"id": "edge-2", "source": "agent-1", "target": "output-1"}
-                ],
-                "tags": ["analysis", "document", "ai"],
-                "usage_count": 0,
-                "rating": 4.5,
-                "created_at": datetime.now().isoformat(),
-                "author": "System"
-            },
-            {
-                "id": "template-3",
-                "name": "Data Processing Pipeline",
-                "description": "Process and transform data through multiple steps",
-                "category": "data",
-                "difficulty": "intermediate",
-                "nodes": [
-                    {
-                        "id": "input-1",
-                        "type": "input",
-                        "position": {"x": 100, "y": 100},
-                        "data": {"label": "Data Input", "input_type": "json"}
-                    },
-                    {
-                        "id": "agent-1",
-                        "type": "agent",
-                        "position": {"x": 300, "y": 100},
-                        "data": {"label": "Data Cleaner", "agent_config": {"model": "llama2", "temperature": 0.3}}
-                    },
-                    {
-                        "id": "agent-2",
-                        "type": "agent",
-                        "position": {"x": 500, "y": 100},
-                        "data": {"label": "Data Analyzer", "agent_config": {"model": "llama2", "temperature": 0.7}}
-                    },
-                    {
-                        "id": "output-1",
-                        "type": "output",
-                        "position": {"x": 700, "y": 100},
-                        "data": {"label": "Processed Data", "output_type": "json"}
-                    }
-                ],
-                "edges": [
-                    {"id": "edge-1", "source": "input-1", "target": "agent-1"},
-                    {"id": "edge-2", "source": "agent-1", "target": "agent-2"},
-                    {"id": "edge-3", "source": "agent-2", "target": "output-1"}
-                ],
-                "tags": ["data", "processing", "pipeline"],
-                "usage_count": 0,
-                "rating": 4.2,
-                "created_at": datetime.now().isoformat(),
-                "author": "System"
-            },
-            {
-                "id": "template-4",
-                "name": "Conditional Workflow",
-                "description": "Workflow with conditional branching",
-                "category": "logic",
-                "difficulty": "advanced",
-                "nodes": [
-                    {
-                        "id": "input-1",
-                        "type": "input",
-                        "position": {"x": 100, "y": 100},
-                        "data": {"label": "Input Data", "input_type": "text"}
-                    },
-                    {
-                        "id": "condition-1",
-                        "type": "condition",
-                        "position": {"x": 300, "y": 100},
-                        "data": {"label": "Check Condition", "condition_type": "if", "condition_expression": "input.length > 10"}
-                    },
-                    {
-                        "id": "agent-1",
-                        "type": "agent",
-                        "position": {"x": 500, "y": 50},
-                        "data": {"label": "Long Text Processor", "agent_config": {"model": "llama2", "temperature": 0.7}}
-                    },
-                    {
-                        "id": "agent-2",
-                        "type": "agent",
-                        "position": {"x": 500, "y": 150},
-                        "data": {"label": "Short Text Processor", "agent_config": {"model": "llama2", "temperature": 0.3}}
-                    },
-                    {
-                        "id": "output-1",
-                        "type": "output",
-                        "position": {"x": 700, "y": 100},
-                        "data": {"label": "Result", "output_type": "text"}
-                    }
-                ],
-                "edges": [
-                    {"id": "edge-1", "source": "input-1", "target": "condition-1"},
-                    {"id": "edge-2", "source": "condition-1", "target": "agent-1", "source_handle": "true", "target_handle": "a"},
-                    {"id": "edge-3", "source": "condition-1", "target": "agent-2", "source_handle": "false", "target_handle": "a"},
-                    {"id": "edge-4", "source": "agent-1", "target": "output-1"},
-                    {"id": "edge-5", "source": "agent-2", "target": "output-1"}
-                ],
-                "tags": ["logic", "conditional", "branching"],
-                "usage_count": 0,
-                "rating": 4.8,
-                "created_at": datetime.now().isoformat(),
-                "author": "System"
-            }
-        ]
-        
-        # Try to load templates from file
-        try:
-            import json
-            import os
-            if os.path.exists(templates_file):
-                with open(templates_file, 'r') as f:
-                    file_templates = json.load(f)
-                    # Merge with default templates, preferring file templates
-                    template_dict = {t["id"]: t for t in default_templates}
-                    for t in file_templates:
-                        template_dict[t["id"]] = t
-                    templates = list(template_dict.values())
-            else:
-                templates = default_templates
-                # Save default templates to file
-                os.makedirs("data", exist_ok=True)
-                with open(templates_file, 'w') as f:
-                    json.dump(templates, f, indent=2)
-        except Exception:
-            # Fallback to default templates if file loading fails
-            templates = default_templates
-
-        if category:
-            templates = [t for t in templates if t["category"] == category]
-
-        return templates
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve workflow templates: {str(e)}"
-        )
-
-@router.post("/from-template", response_model=WorkflowResponse)
-async def create_workflow_from_template(
-    template_id: str,
-    name: str,
-    description: Optional[str] = None,
+@router.get("/executions", response_model=List[WorkflowExecution])
+async def get_executions(
+    workflow_id: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a workflow from a template"""
+    """获取执行历史"""
     try:
-        templates = await get_workflow_templates()
-        template = next((t for t in templates if t["id"] == template_id), None)
-
-        if not template:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Template not found"
-            )
-
-        workflow_data = {
-            "name": name,
-            "description": description or template["description"],
-            "nodes": template["nodes"],
-            "edges": template["edges"]
-        }
-
-        workflow = workflow_service.create_workflow(workflow_data, current_user.id)
-        return WorkflowResponse(**workflow.dict())
-    except HTTPException:
-        raise
+        executions = workflow_service.get_user_executions(
+            user_id=current_user.id,
+            workflow_id=workflow_id
+        )
+        return executions
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create workflow from template: {str(e)}"
+            detail=f"获取执行历史失败: {str(e)}"
         )
 
-# Import/Export endpoints
+# 工作流工具API
+@router.post("/validate")
+async def validate_workflow(request: ValidateWorkflowRequest):
+    """验证工作流"""
+    try:
+        result = workflow_service.validate_workflow(request.dict())
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"验证工作流失败: {str(e)}"
+        )
+
+@router.get("/templates", response_model=List[Workflow])
+async def get_templates():
+    """获取工作流模板"""
+    # TODO: 实现模板功能
+    templates = [
+        {
+            "id": "template-1",
+            "name": "文档分析工作流",
+            "description": "自动分析文档内容并生成摘要",
+            "nodes": [
+                {
+                    "id": "input-1",
+                    "type": "input",
+                    "position": {"x": 100, "y": 100},
+                    "data": {
+                        "label": "文档输入",
+                        "input_type": "file",
+                        "description": "上传要分析的文档"
+                    }
+                },
+                {
+                    "id": "agent-1",
+                    "type": "agent",
+                    "position": {"x": 300, "y": 100},
+                    "data": {
+                        "label": "文档分析Agent",
+                        "agent_config": {
+                            "model": "llama2",
+                            "temperature": 0.3,
+                            "max_tokens": 2000,
+                            "system_prompt": "你是一个专业的文档分析助手，请分析文档内容并生成结构化摘要。"
+                        },
+                        "description": "分析文档内容"
+                    }
+                },
+                {
+                    "id": "output-1",
+                    "type": "output",
+                    "position": {"x": 500, "y": 100},
+                    "data": {
+                        "label": "分析结果",
+                        "output_type": "json",
+                        "description": "输出分析结果"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "edge-1",
+                    "source": "input-1",
+                    "target": "agent-1"
+                },
+                {
+                    "id": "edge-2",
+                    "source": "agent-1",
+                    "target": "output-1"
+                }
+            ],
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
+            "user_id": "system"
+        }
+    ]
+    return templates
+
+@router.post("/from-template", response_model=Workflow)
+async def create_from_template(
+    request: CreateFromTemplateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """从模板创建工作流"""
+    # TODO: 实现从模板创建功能
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="从模板创建功能尚未实现"
+    )
+
 @router.get("/{workflow_id}/export")
 async def export_workflow(
     workflow_id: str,
     format: str = "json",
     current_user: User = Depends(get_current_user)
 ):
-    """Export a workflow in specified format"""
+    """导出工作流"""
     workflow = workflow_service.get_workflow(workflow_id, current_user.id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found or access denied"
+            detail="工作流不存在"
         )
+    
+    # TODO: 实现导出功能
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="导出功能尚未实现"
+    )
 
-    if format == "json":
-        return workflow.dict()
-    elif format == "yaml":
-        import yaml
-        return yaml.dump(workflow.dict(), default_flow_style=False)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported export format. Use 'json' or 'yaml'"
-        )
-
-@router.post("/import", response_model=WorkflowResponse)
+@router.post("/import", response_model=Workflow)
 async def import_workflow(
-    data: Dict[str, Any],
-    format: str = "json",
+    file: UploadFile = File(...),
     current_user: User = Depends(get_current_user)
 ):
-    """Import a workflow from specified format"""
-    try:
-        if format == "yaml":
-            import yaml
-            workflow_data = yaml.safe_load(data.get("data", ""))
-        else:
-            workflow_data = data.get("data", data)
-
-        # Create workflow from imported data
-        workflow_data["name"] = workflow_data.get("name", "Imported Workflow")
-        workflow_data["description"] = workflow_data.get("description", "Imported workflow")
-
-        workflow = workflow_service.create_workflow(workflow_data, current_user.id)
-        return WorkflowResponse(**workflow.dict())
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to import workflow: {str(e)}"
-        )
+    """导入工作流"""
+    # TODO: 实现导入功能
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="导入功能尚未实现"
+    )
