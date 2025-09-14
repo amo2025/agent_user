@@ -16,6 +16,9 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import main app to access active_connections
+from main import active_connections
+
 class AgentConfig(BaseModel):
     id: str
     name: str
@@ -157,9 +160,40 @@ Respond with only the JSON configuration, no additional text.
             # Parse the JSON response
             try:
                 config_data = json.loads(config_text)
-            except json.JSONDecodeError:
-                # If JSON parsing fails, create a default config
-                logger.warning("Failed to parse generated config, using default")
+                
+                # Validate required fields
+                required_fields = ["name", "description", "type", "model", "tools", "prompt_template", "parameters"]
+                missing_fields = [field for field in required_fields if field not in config_data]
+                
+                if missing_fields:
+                    logger.warning(f"Generated config missing fields: {missing_fields}, using default")
+                    raise ValueError("Missing required fields")
+                
+                # Validate field types
+                if not isinstance(config_data["name"], str) or len(config_data["name"]) == 0:
+                    raise ValueError("Invalid name")
+                
+                if not isinstance(config_data["description"], str) or len(config_data["description"]) == 0:
+                    raise ValueError("Invalid description")
+                
+                if not isinstance(config_data["type"], str) or len(config_data["type"]) == 0:
+                    raise ValueError("Invalid type")
+                
+                if not isinstance(config_data["model"], str) or len(config_data["model"]) == 0:
+                    raise ValueError("Invalid model")
+                
+                if not isinstance(config_data["tools"], list):
+                    raise ValueError("Invalid tools format")
+                
+                if not isinstance(config_data["prompt_template"], str) or len(config_data["prompt_template"]) == 0:
+                    raise ValueError("Invalid prompt_template")
+                
+                if not isinstance(config_data["parameters"], dict):
+                    raise ValueError("Invalid parameters format")
+                
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                # If JSON parsing or validation fails, create a default config
+                logger.warning(f"Failed to parse or validate generated config: {e}, using default")
                 config_data = {
                     "name": "AI Assistant",
                     "description": description[:200],
@@ -233,7 +267,7 @@ Respond with only the JSON configuration, no additional text.
             execution = self.executions[execution_id]
 
             # Add initial log
-            self._add_log(execution_id, "info", f"Starting execution of agent {agent.name}")
+            await self._add_log(execution_id, "info", f"Starting execution of agent {agent.name}")
 
             # Initialize the LLM
             llm = Ollama(base_url=self.ollama_base_url, model=agent.model)
@@ -256,7 +290,7 @@ Respond with only the JSON configuration, no additional text.
                 )
 
                 # Execute with tools
-                self._add_log(execution_id, "info", f"Executing agent with {len(tools)} tools")
+                await self._add_log(execution_id, "info", f"Executing agent with {len(tools)} tools")
 
                 # Combine input with parameters
                 full_input = request.input
@@ -267,7 +301,7 @@ Respond with only the JSON configuration, no additional text.
 
             else:
                 # Simple LLM execution
-                self._add_log(execution_id, "info", "Executing agent without tools")
+                await self._add_log(execution_id, "info", "Executing agent without tools")
 
                 # Format prompt template
                 prompt = agent.prompt_template.format(
@@ -282,14 +316,14 @@ Respond with only the JSON configuration, no additional text.
             execution.result = str(result)
             execution.end_time = datetime.utcnow()
 
-            self._add_log(execution_id, "info", "Execution completed successfully")
+            await self._add_log(execution_id, "info", "Execution completed successfully")
 
         except Exception as e:
             logger.error(f"Error during agent execution: {e}")
             execution.status = "failed"
             execution.error = str(e)
             execution.end_time = datetime.utcnow()
-            self._add_log(execution_id, "error", f"Execution failed: {str(e)}")
+            await self._add_log(execution_id, "error", f"Execution failed: {str(e)}")
 
         finally:
             self.save_executions()
@@ -301,9 +335,47 @@ Respond with only the JSON configuration, no additional text.
 
         if tool_name == "calculator":
             def calculator(expression: str) -> str:
-                """Evaluate a mathematical expression"""
+                """Evaluate a mathematical expression safely"""
                 try:
-                    result = eval(expression)
+                    # Use a safer evaluation method instead of eval()
+                    import ast
+                    import operator
+                    
+                    # Supported operators
+                    operators = {
+                        ast.Add: operator.add,
+                        ast.Sub: operator.sub,
+                        ast.Mult: operator.mul,
+                        ast.Div: operator.truediv,
+                        ast.Pow: operator.pow,
+                        ast.Mod: operator.mod,
+                        ast.USub: operator.neg,
+                        ast.UAdd: operator.pos,
+                    }
+                    
+                    def eval_expr(expr):
+                        """
+                        Safely evaluate a mathematical expression
+                        """
+                        def _eval(node):
+                            if isinstance(node, ast.Num):  # <number>
+                                return node.n
+                            elif isinstance(node, ast.Constant):  # <number> (Python 3.8+)
+                                return node.value
+                            elif isinstance(node, ast.BinOp):  # <left> <operator> <right>
+                                return operators[type(node.op)](_eval(node.left), _eval(node.right))
+                            elif isinstance(node, ast.UnaryOp):  # <operator> <operand> e.g., -1
+                                return operators[type(node.op)](_eval(node.operand))
+                            else:
+                                raise TypeError(f"Unsupported operation: {ast.dump(node)}")
+                        
+                        try:
+                            tree = ast.parse(expr, mode='eval')
+                            return _eval(tree.body)
+                        except Exception as e:
+                            raise ValueError(f"Invalid expression: {expr}")
+                    
+                    result = eval_expr(expression)
                     return str(result)
                 except Exception as e:
                     return f"Error: {str(e)}"
@@ -328,23 +400,43 @@ Respond with only the JSON configuration, no additional text.
 
         elif tool_name == "file_reader":
             def file_reader(file_path: str) -> str:
-                """Read content from a file"""
+                """Read content from a file with security restrictions"""
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    import os
+                    # Resolve the absolute path
+                    abs_path = os.path.abspath(file_path)
+                    
+                    # Define allowed directory (user's data directory)
+                    allowed_dir = os.path.abspath("data")
+                    
+                    # Check if the file is within the allowed directory
+                    if not abs_path.startswith(allowed_dir):
+                        return "Error: Access denied. File must be in the allowed directory."
+                    
+                    # Check if file exists
+                    if not os.path.exists(abs_path):
+                        return f"Error: File not found: {file_path}"
+                    
+                    # Check file size (limit to 1MB)
+                    file_size = os.path.getsize(abs_path)
+                    if file_size > 1024 * 1024:  # 1MB limit
+                        return "Error: File too large. Maximum size is 1MB."
+                    
+                    with open(abs_path, 'r', encoding='utf-8') as f:
                         return f.read()
                 except Exception as e:
                     return f"Error reading file: {str(e)}"
 
             return Tool(
                 name="file_reader",
-                description="Useful for reading content from files",
+                description="Useful for reading content from files (limited to data directory, max 1MB)",
                 func=file_reader
             )
 
         return None
 
-    def _add_log(self, execution_id: str, level: str, message: str, metadata: Dict[str, Any] = None):
-        """添加执行日志"""
+    async def _add_log(self, execution_id: str, level: str, message: str, metadata: Dict[str, Any] = None):
+        """添加执行日志并通过WebSocket发送实时更新"""
         if execution_id in self.executions:
             log = ExecutionLog(
                 timestamp=datetime.utcnow(),
@@ -354,6 +446,32 @@ Respond with only the JSON configuration, no additional text.
             )
             self.executions[execution_id].logs.append(log)
             self.save_executions()
+            
+            # Send log to all active WebSocket connections for this execution
+            log_data = {
+                "timestamp": log.timestamp.isoformat(),
+                "level": log.level,
+                "message": log.message,
+                "metadata": log.metadata
+            }
+            
+            # Find all connections for this execution_id
+            connections_to_remove = []
+            for connection_id, connection_data in active_connections.items():
+                if connection_data["execution_id"] == execution_id:
+                    try:
+                        await connection_data["websocket"].send_json({
+                            "type": "log",
+                            "data": log_data
+                        })
+                    except Exception as e:
+                        logger.error(f"Error sending log to WebSocket: {e}")
+                        connections_to_remove.append(connection_id)
+            
+            # Remove broken connections
+            for connection_id in connections_to_remove:
+                if connection_id in active_connections:
+                    del active_connections[connection_id]
 
     def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
         """获取Agent配置"""

@@ -212,8 +212,9 @@ async def validate_workflow(workflow: Dict[str, Any], current_user: User = Depen
 async def get_workflow_templates(category: Optional[str] = None):
     """Get available workflow templates"""
     try:
-        # For now, return some basic templates
-        templates = [
+        # Load templates from file or use default templates
+        templates_file = "data/workflow_templates.json"
+        default_templates = [
             {
                 "id": "template-1",
                 "name": "Simple Chat Bot",
@@ -285,8 +286,124 @@ async def get_workflow_templates(category: Optional[str] = None):
                 "rating": 4.5,
                 "created_at": datetime.now().isoformat(),
                 "author": "System"
+            },
+            {
+                "id": "template-3",
+                "name": "Data Processing Pipeline",
+                "description": "Process and transform data through multiple steps",
+                "category": "data",
+                "difficulty": "intermediate",
+                "nodes": [
+                    {
+                        "id": "input-1",
+                        "type": "input",
+                        "position": {"x": 100, "y": 100},
+                        "data": {"label": "Data Input", "input_type": "json"}
+                    },
+                    {
+                        "id": "agent-1",
+                        "type": "agent",
+                        "position": {"x": 300, "y": 100},
+                        "data": {"label": "Data Cleaner", "agent_config": {"model": "llama2", "temperature": 0.3}}
+                    },
+                    {
+                        "id": "agent-2",
+                        "type": "agent",
+                        "position": {"x": 500, "y": 100},
+                        "data": {"label": "Data Analyzer", "agent_config": {"model": "llama2", "temperature": 0.7}}
+                    },
+                    {
+                        "id": "output-1",
+                        "type": "output",
+                        "position": {"x": 700, "y": 100},
+                        "data": {"label": "Processed Data", "output_type": "json"}
+                    }
+                ],
+                "edges": [
+                    {"id": "edge-1", "source": "input-1", "target": "agent-1"},
+                    {"id": "edge-2", "source": "agent-1", "target": "agent-2"},
+                    {"id": "edge-3", "source": "agent-2", "target": "output-1"}
+                ],
+                "tags": ["data", "processing", "pipeline"],
+                "usage_count": 0,
+                "rating": 4.2,
+                "created_at": datetime.now().isoformat(),
+                "author": "System"
+            },
+            {
+                "id": "template-4",
+                "name": "Conditional Workflow",
+                "description": "Workflow with conditional branching",
+                "category": "logic",
+                "difficulty": "advanced",
+                "nodes": [
+                    {
+                        "id": "input-1",
+                        "type": "input",
+                        "position": {"x": 100, "y": 100},
+                        "data": {"label": "Input Data", "input_type": "text"}
+                    },
+                    {
+                        "id": "condition-1",
+                        "type": "condition",
+                        "position": {"x": 300, "y": 100},
+                        "data": {"label": "Check Condition", "condition_type": "if", "condition_expression": "input.length > 10"}
+                    },
+                    {
+                        "id": "agent-1",
+                        "type": "agent",
+                        "position": {"x": 500, "y": 50},
+                        "data": {"label": "Long Text Processor", "agent_config": {"model": "llama2", "temperature": 0.7}}
+                    },
+                    {
+                        "id": "agent-2",
+                        "type": "agent",
+                        "position": {"x": 500, "y": 150},
+                        "data": {"label": "Short Text Processor", "agent_config": {"model": "llama2", "temperature": 0.3}}
+                    },
+                    {
+                        "id": "output-1",
+                        "type": "output",
+                        "position": {"x": 700, "y": 100},
+                        "data": {"label": "Result", "output_type": "text"}
+                    }
+                ],
+                "edges": [
+                    {"id": "edge-1", "source": "input-1", "target": "condition-1"},
+                    {"id": "edge-2", "source": "condition-1", "target": "agent-1", "source_handle": "true", "target_handle": "a"},
+                    {"id": "edge-3", "source": "condition-1", "target": "agent-2", "source_handle": "false", "target_handle": "a"},
+                    {"id": "edge-4", "source": "agent-1", "target": "output-1"},
+                    {"id": "edge-5", "source": "agent-2", "target": "output-1"}
+                ],
+                "tags": ["logic", "conditional", "branching"],
+                "usage_count": 0,
+                "rating": 4.8,
+                "created_at": datetime.now().isoformat(),
+                "author": "System"
             }
         ]
+        
+        # Try to load templates from file
+        try:
+            import json
+            import os
+            if os.path.exists(templates_file):
+                with open(templates_file, 'r') as f:
+                    file_templates = json.load(f)
+                    # Merge with default templates, preferring file templates
+                    template_dict = {t["id"]: t for t in default_templates}
+                    for t in file_templates:
+                        template_dict[t["id"]] = t
+                    templates = list(template_dict.values())
+            else:
+                templates = default_templates
+                # Save default templates to file
+                os.makedirs("data", exist_ok=True)
+                with open(templates_file, 'w') as f:
+                    json.dump(templates, f, indent=2)
+        except Exception:
+            # Fallback to default templates if file loading fails
+            templates = default_templates
 
         if category:
             templates = [t for t in templates if t["category"] == category]

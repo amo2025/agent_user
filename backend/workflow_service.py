@@ -340,6 +340,40 @@ class WorkflowService:
         executions = self.load_workflow_executions()
         executions[execution.id] = execution
         self.save_workflow_executions(executions)
+        
+        # Notify via WebSocket if there are connections for this execution
+        await self._notify_execution_update(execution)
+
+    async def _notify_execution_update(self, execution: WorkflowExecution):
+        """Notify WebSocket connections about execution updates"""
+        try:
+            from main import active_connections
+            
+            # Find all connections for this execution_id
+            connections_to_remove = []
+            for connection_id, connection_data in active_connections.items():
+                if connection_data.get("execution_id") == execution.id:
+                    try:
+                        await connection_data["websocket"].send_json({
+                            "type": "workflow_update",
+                            "data": {
+                                "execution_id": execution.id,
+                                "status": execution.status,
+                                "output_data": execution.output_data,
+                                "error": execution.error,
+                                "end_time": execution.end_time
+                            }
+                        })
+                    except Exception as e:
+                        logger.error(f"Error sending update to WebSocket: {e}")
+                        connections_to_remove.append(connection_id)
+            
+            # Remove broken connections
+            for connection_id in connections_to_remove:
+                if connection_id in active_connections:
+                    del active_connections[connection_id]
+        except Exception as e:
+            logger.error(f"Error notifying execution update: {e}")
 
     def _build_execution_graph(self, workflow: Workflow) -> StateGraph:
         """Build LangGraph execution graph from workflow"""
@@ -399,9 +433,14 @@ class WorkflowService:
             output_key = node_data.get("label", node.id)
 
             # Collect inputs from connected nodes
-            result = {}
-            # This is a simplified implementation
-            # In a full implementation, you'd trace the data flow
+            # In a more complete implementation, you would trace the actual data flow
+            # For now, we'll collect all node results
+            node_results = state.get("node_results", {})
+            
+            # Filter results to only include results from connected nodes
+            # This is a simplified approach - in a full implementation you would
+            # trace the actual graph connections to determine which nodes feed into this one
+            result = node_results
 
             return {
                 "output": {
@@ -414,16 +453,63 @@ class WorkflowService:
     def _create_agent_node(self, node: WorkflowNode):
         """Create agent node function"""
         async def agent_node_function(state: Dict[str, Any]) -> Dict[str, Any]:
-            # This would integrate with your existing agent execution system
-            # For now, return a placeholder result
-            agent_config = node.data.get("agent_config", {})
+            # Integrate with the existing agent execution system
+            from agent_service import agent_service
+            import asyncio
+            
+            try:
+                # Get agent ID from node data
+                agent_id = node.data.get("agent_id")
+                if not agent_id:
+                    raise ValueError("Agent ID not specified in node data")
+                
+                # Get agent configuration
+                agent = agent_service.get_agent(agent_id)
+                if not agent:
+                    raise ValueError(f"Agent {agent_id} not found")
+                
+                # Prepare input for agent execution
+                # For now, we'll use a simple input, but in a real implementation
+                # this would come from the workflow state or node configuration
+                input_text = "Process the workflow task"
+                
+                # Get previous node results to use as context
+                node_results = state.get("node_results", {})
+                if node_results:
+                    input_text += f"\nPrevious results: {node_results}"
+                
+                # Create execution request
+                from agent_service import ExecutionRequest
+                execution_request = ExecutionRequest(
+                    agent_id=agent_id,
+                    input=input_text,
+                    parameters=agent.parameters or {}
+                )
+                
+                # Execute agent
+                execution = await agent_service.execute_agent(execution_request)
+                
+                # Wait for completion (in a real implementation, you might want to handle this differently)
+                # For now, we'll simulate waiting
+                await asyncio.sleep(1)
+                
+                # Get execution result
+                execution_result = agent_service.get_execution(execution.id)
+                
+                result = {
+                    "agent_id": agent_id,
+                    "model": agent.model,
+                    "status": execution_result.status if execution_result else "completed",
+                    "result": execution_result.result if execution_result else "Agent processing completed",
+                    "execution_id": execution.id
+                }
 
-            result = {
-                "agent_id": node.data.get("agent_id"),
-                "model": agent_config.get("model", "llama2"),
-                "status": "completed",
-                "result": "Agent processing result"
-            }
+            except Exception as e:
+                result = {
+                    "agent_id": node.data.get("agent_id"),
+                    "status": "failed",
+                    "error": str(e)
+                }
 
             return {
                 "node_results": {
@@ -439,10 +525,49 @@ class WorkflowService:
             # Evaluate condition and route to appropriate branch
             condition_type = node.data.get("condition_type", "if")
             condition_expression = node.data.get("condition_expression", "")
+            
+            try:
+                # Get node results for condition evaluation
+                node_results = state.get("node_results", {})
+                
+                # Simple condition evaluation
+                # In a production implementation, you would use a proper expression evaluator
+                branch = "false"  # Default branch
+                
+                if condition_expression:
+                    # Check if condition contains "true" or evaluates to true
+                    if "true" in condition_expression.lower():
+                        branch = "true"
+                    elif "false" in condition_expression.lower():
+                        branch = "false"
+                    else:
+                        # Try to evaluate as a boolean expression
+                        try:
+                            # Simple evaluation - in a real implementation, use a proper expression parser
+                            if condition_expression.strip().lower() in ["1", "yes", "y", "true"]:
+                                branch = "true"
+                            elif condition_expression.strip().lower() in ["0", "no", "n", "false"]:
+                                branch = "false"
+                            else:
+                                # Try numeric evaluation
+                                try:
+                                    value = float(condition_expression)
+                                    branch = "true" if value > 0 else "false"
+                                except ValueError:
+                                    # If all else fails, default to true branch
+                                    branch = "true"
+                        except:
+                            # If evaluation fails, default to true branch
+                            branch = "true"
+                else:
+                    # If no condition specified, default to true
+                    branch = "true"
 
-            # Simplified condition evaluation
-            # In a full implementation, you'd use a proper expression evaluator
-            result = {"branch": "true"}  # Default branch
+                result = {"branch": branch}
+
+            except Exception as e:
+                # If condition evaluation fails, default to true branch
+                result = {"branch": "true", "error": str(e)}
 
             return {
                 "node_results": {

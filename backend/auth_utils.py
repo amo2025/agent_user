@@ -23,7 +23,8 @@ class UserChangePassword(BaseModel):
 
 security = HTTPBearer()
 
-SECRET_KEY = "your-secret-key-here-change-in-production"
+import os
+SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key-here-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24小时
 

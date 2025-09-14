@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -9,7 +9,7 @@ import json
 import os
 import uuid
 from typing import Optional, Dict, Any
-from auth_utils import get_current_user, User, Token, UserRegister, UserLogin, UserChangePassword, verify_password, get_password_hash, create_access_token
+from auth_utils import get_current_user, User, Token, UserRegister, UserLogin, UserChangePassword, verify_password, get_password_hash, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 import scrypt
 import secrets
 
@@ -18,6 +18,9 @@ app = FastAPI(
     description="个人Agent助手平台后端API",
     version="0.1.0"
 )
+
+# Store active WebSocket connections for real-time updates
+active_connections = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -131,6 +134,30 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy", "timestamp": datetime.utcnow()}
+
+# WebSocket endpoint for real-time log streaming
+@app.websocket("/ws/logs/{execution_id}")
+async def websocket_endpoint(websocket: WebSocket, execution_id: str):
+    """WebSocket端点用于实时日志流"""
+    await websocket.accept()
+    
+    # Store the connection
+    connection_id = f"{execution_id}_{uuid.uuid4()}"
+    active_connections[connection_id] = {
+        "websocket": websocket,
+        "execution_id": execution_id
+    }
+    
+    try:
+        while True:
+            # Keep the connection alive
+            data = await websocket.receive_text()
+            # Echo back for keep-alive
+            await websocket.send_text(f"Connected to execution {execution_id}")
+    except WebSocketDisconnect:
+        # Remove the connection when disconnected
+        if connection_id in active_connections:
+            del active_connections[connection_id]
 
 # 延迟导入和注册路由
 def setup_routes():

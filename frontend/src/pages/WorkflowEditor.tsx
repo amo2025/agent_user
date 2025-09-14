@@ -30,6 +30,7 @@ import InputNode from '../components/workflow/InputNode';
 import OutputNode from '../components/workflow/OutputNode';
 import ConditionNode from '../components/workflow/ConditionNode';
 import DebugPanel from '../components/workflow/DebugPanel';
+import NodePropertiesPanel from '../components/workflow/NodePropertiesPanel';
 import { WorkflowNode, WorkflowEdge, NodeType } from '../types';
 
 // Node types configuration
@@ -128,7 +129,7 @@ const WorkflowEditor: React.FC = () => {
     [setEdges]
   );
 
-  // Add new node
+  // Add new node at center of viewport
   const addNode = useCallback(() => {
     const newNode: Node = {
       id: `node-${Date.now()}`,
@@ -147,6 +148,47 @@ const WorkflowEditor: React.FC = () => {
       description: `${selectedNodeType} node added to workflow`,
     });
   }, [selectedNodeType, reactFlowInstance]);
+
+  // Handle drag and drop of nodes
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      if (!type) return;
+
+      // Check if the dropped element is valid
+      if (!['input', 'output', 'agent', 'condition'].includes(type)) {
+        return;
+      }
+
+      // Get the position where the node was dropped
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const newNode: Node = {
+        id: `node-${Date.now()}`,
+        type,
+        position,
+        data: getDefaultNodeData(type as NodeType),
+      };
+
+      setNodes((nds) => nds.concat(newNode));
+
+      toast({
+        title: 'Node Added',
+        description: `${type} node added to workflow`,
+      });
+    },
+    [reactFlowInstance]
+  );
 
   // Get default data for different node types
   const getDefaultNodeData = (nodeType: NodeType) => {
@@ -391,6 +433,8 @@ const WorkflowEditor: React.FC = () => {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
             nodeTypes={nodeTypes}
             fitView
             attributionPosition="bottom-right"
@@ -404,10 +448,15 @@ const WorkflowEditor: React.FC = () => {
               <h3 className="font-semibold text-sm mb-3">Node Palette</h3>
               <div className="space-y-2">
                 {nodeOptions.map((option) => (
-                  <button
+                  <div
                     key={option.type}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('application/reactflow', option.type);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
                     onClick={() => setSelectedNodeType(option.type)}
-                    className={`w-full text-left p-2 rounded text-sm transition-colors ${
+                    className={`w-full text-left p-2 rounded text-sm transition-colors cursor-move ${
                       selectedNodeType === option.type
                         ? 'bg-blue-100 text-blue-700 border border-blue-300'
                         : 'hover:bg-gray-100'
@@ -420,7 +469,7 @@ const WorkflowEditor: React.FC = () => {
                         <div className="text-xs text-gray-500">{option.description}</div>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </Panel>
@@ -443,9 +492,7 @@ const WorkflowEditor: React.FC = () => {
                   <TabsTrigger value="workflow">Workflow</TabsTrigger>
                 </TabsList>
                 <TabsContent value="node" className="space-y-4">
-                  <div className="text-sm text-gray-600">
-                    Select a node to edit its properties
-                  </div>
+                  <NodePropertiesPanel />
                 </TabsContent>
                 <TabsContent value="workflow" className="space-y-4">
                   <div>

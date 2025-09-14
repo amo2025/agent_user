@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, StepInto, StepOver, Stop, Bug, X, Trash2 } from 'lucide-react';
+import { Play, Pause, CornerDownRight, CornerRightDown, Stop, Bug, X, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -230,7 +230,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ className = '', onClose }) => {
                   disabled={isStepping || !currentExecutionId}
                   className="flex items-center gap-1"
                 >
-                  <StepInto className="h-3 w-3" />
+                  <CornerDownRight className="h-3 w-3" />
                   单步执行
                 </Button>
                 <Button

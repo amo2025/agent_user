@@ -115,7 +115,7 @@ const ExecuteAgent = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       </div>
     );
   }
@@ -176,7 +176,7 @@ const ExecuteAgent = () => {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="请输入要处理的内容..."
-                    className="w-full min-h-[120px] p-3 border border-gray-300 rounded-md focus:ring-primary focus:border-primary"
+                    className="w-full min-h-[120px] p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     disabled={executionLoading}
                   />
                 </div>
@@ -190,7 +190,7 @@ const ExecuteAgent = () => {
                     value={parameters}
                     onChange={(e) => setParameters(e.target.value)}
                     placeholder='{"key": "value"}'
-                    className="w-full min-h-[80px] p-3 border border-gray-300 rounded-md focus:ring-primary focus:border-primary font-mono text-sm"
+                    className="w-full min-h-[80px] p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
                     disabled={executionLoading}
                   />
                 </div>
