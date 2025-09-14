@@ -16,7 +16,7 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Plus, Save, Play, Download, Upload, Settings, Grid } from 'lucide-react';
+import { Plus, Save, Play, Download, Upload, Settings, Grid, Bug } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -29,6 +29,7 @@ import AgentNode from '../components/workflow/AgentNode';
 import InputNode from '../components/workflow/InputNode';
 import OutputNode from '../components/workflow/OutputNode';
 import ConditionNode from '../components/workflow/ConditionNode';
+import DebugPanel from '../components/workflow/DebugPanel';
 import { WorkflowNode, WorkflowEdge, NodeType } from '../types';
 
 // Node types configuration
@@ -62,6 +63,7 @@ const WorkflowEditor: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [selectedNodeType, setSelectedNodeType] = useState<NodeType>('input');
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   // Node type options
   const nodeOptions = [
@@ -356,6 +358,14 @@ const WorkflowEditor: React.FC = () => {
           <div className="flex items-center gap-1 ml-4">
             <Button
               size="sm"
+              variant={showDebugPanel ? "default" : "outline"}
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              title="调试面板"
+            >
+              <Bug className="w-4 h-4" />
+            </Button>
+            <Button
+              size="sm"
               variant={showGrid ? "default" : "outline"}
               onClick={() => setShowGrid(!showGrid)}
             >
@@ -472,6 +482,13 @@ const WorkflowEditor: React.FC = () => {
                 </TabsContent>
               </Tabs>
             </div>
+          </div>
+        )}
+
+        {/* Debug Panel */}
+        {showDebugPanel && (
+          <div className="w-80 border-l bg-background">
+            <DebugPanel onClose={() => setShowDebugPanel(false)} />
           </div>
         )}
       </div>

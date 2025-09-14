@@ -1,245 +1,62 @@
-// Workflow types for v0.2
-
-import { Node, Edge } from 'reactflow';
-
-// Base workflow types
-export interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
-  created_at: string;
-  updated_at: string;
-  user_id: string;
-  is_template?: boolean;
-  template_category?: string;
-}
-
 export interface WorkflowNode {
   id: string;
-  type: NodeType;
+  type: 'input' | 'output' | 'agent' | 'condition';
   position: { x: number; y: number };
-  data: NodeData;
+  data: {
+    name?: string;
+    description?: string;
+    [key: string]: any;
+  };
+  breakpoint?: boolean; // New: breakpoint support
+  executionStatus?: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  executionData?: any; // New: execution data for debugging
 }
 
 export interface WorkflowEdge {
   id: string;
   source: string;
   target: string;
-  sourceHandle?: string;
-  targetHandle?: string;
-  type?: 'default' | 'smoothstep' | 'straight';
+  type?: string;
   label?: string;
-}
-
-// Node types
-export type NodeType =
-  | 'input'
-  | 'output'
-  | 'agent'
-  | 'condition'
-  | 'parallel'
-  | 'join'
-  | 'code'
-  | 'transform';
-
-// Node data interfaces
-export interface NodeData {
-  label: string;
-  description?: string;
-  config?: any;
-  parameters?: Record<string, any>;
-  outputs?: Record<string, any>;
-  validated?: boolean;
-  error?: string;
-}
-
-// Agent node specific data
-export interface AgentNodeData extends NodeData {
-  agent_id?: string;
-  agent_config?: {
-    model: string;
-    temperature: number;
-    max_tokens: number;
-    tools: string[];
-    system_prompt?: string;
-  };
-  input_mapping?: Record<string, string>;
-  output_mapping?: Record<string, string>;
-}
-
-// Condition node specific data
-export interface ConditionNodeData extends NodeData {
-  condition_type: 'if' | 'switch' | 'loop';
-  condition_expression: string;
-  branches: {
-    id: string;
-    label: string;
+  data?: {
     condition?: string;
-    target_node_id?: string;
-  }[];
+    [key: string]: any;
+  };
 }
 
-// Code node specific data
-export interface CodeNodeData extends NodeData {
-  language: 'python' | 'javascript' | 'typescript';
-  code: string;
-  input_variables: string[];
-  output_variables: string[];
-}
-
-// Workflow execution types
-export interface WorkflowExecution {
-  id: string;
-  workflow_id: string;
-  user_id: string;
-  status: ExecutionStatus;
-  input_data?: Record<string, any>;
-  output_data?: Record<string, any>;
-  node_executions: NodeExecution[];
-  start_time: string;
-  end_time?: string;
-  error?: string;
-}
-
-export interface NodeExecution {
-  node_id: string;
-  status: ExecutionStatus;
-  input_data?: Record<string, any>;
-  output_data?: Record<string, any>;
-  logs: ExecutionLog[];
-  start_time: string;
-  end_time?: string;
-  error?: string;
-}
-
-export type ExecutionStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'paused';
-
-export interface ExecutionLog {
-  timestamp: string;
-  level: 'info' | 'warn' | 'error' | 'debug';
-  message: string;
-  node_id?: string;
-  metadata?: Record<string, any>;
-}
-
-// Workflow template types
-export interface WorkflowTemplate {
+export interface Workflow {
   id: string;
   name: string;
-  description: string;
-  category: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  description?: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
-  tags: string[];
-  usage_count: number;
-  rating: number;
   created_at: string;
-  author?: string;
+  updated_at: string;
+  tags?: string[];
+  is_public?: boolean;
 }
 
-// Workflow validation types
-export interface WorkflowValidationResult {
-  is_valid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-}
-
-export interface ValidationError {
-  type: 'node' | 'edge' | 'flow';
-  node_id?: string;
-  edge_id?: string;
-  message: string;
-  severity: 'error' | 'warning';
-}
-
-export interface ValidationWarning {
-  type: 'node' | 'edge' | 'flow';
-  node_id?: string;
-  edge_id?: string;
-  message: string;
-  suggestion?: string;
-}
-
-// API request/response types
-export interface CreateWorkflowRequest {
-  name: string;
-  description?: string;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
-}
-
-export interface UpdateWorkflowRequest {
-  name?: string;
-  description?: string;
-  nodes?: WorkflowNode[];
-  edges?: WorkflowEdge[];
-}
-
-export interface ExecuteWorkflowRequest {
-  workflow_id: string;
-  input_data?: Record<string, any>;
-  parameters?: Record<string, any>;
-  dry_run?: boolean;
-}
-
-export interface WorkflowExecutionResponse {
-  execution_id: string;
-  status: ExecutionStatus;
-  message?: string;
-}
-
-// React Flow integration types
-export interface CustomNodeProps {
-  id: string;
-  data: NodeData;
-  selected?: boolean;
-  isConnectable?: boolean;
-  onNodeClick?: (node: WorkflowNode) => void;
-  onNodeDoubleClick?: (node: WorkflowNode) => void;
-  onNodeContextMenu?: (node: WorkflowNode, event: React.MouseEvent) => void;
-}
-
-export interface CustomEdgeProps {
-  id: string;
-  source: string;
-  target: string;
-  sourceX: number;
-  sourceY: number;
-  targetX: number;
-  targetY: number;
-  sourcePosition?: 'top' | 'right' | 'bottom' | 'left';
-  targetPosition?: 'top' | 'right' | 'bottom' | 'left';
-  style?: React.CSSProperties;
-  data?: any;
-  markerEnd?: string;
-  markerStart?: string;
-  selected?: boolean;
-  onEdgeClick?: (edge: WorkflowEdge) => void;
-  onEdgeContextMenu?: (edge: WorkflowEdge, event: React.MouseEvent) => void;
-}
-
-// Workflow store types
 export interface WorkflowStore {
-  // Current workflow
   currentWorkflow: Workflow | null;
   selectedNodes: string[];
   selectedEdges: string[];
-  clipboard: { nodes: WorkflowNode[]; edges: WorkflowEdge[] } | null;
+  clipboard: {
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+  } | null;
 
   // UI state
   showGrid: boolean;
   showMinimap: boolean;
   showPropertiesPanel: boolean;
   zoomLevel: number;
+
+  // Execution state
+  isExecuting: boolean;
+  isDebugging: boolean;
+  currentExecutionId: string | null;
+  executedNodes: string[];
+  executionMode: 'run' | 'debug' | 'step';
 
   // Actions
   setCurrentWorkflow: (workflow: Workflow | null) => void;
@@ -264,9 +81,100 @@ export interface WorkflowStore {
   // Validation
   validateWorkflow: () => WorkflowValidationResult;
 
-  // UI
+  // UI controls
   setShowGrid: (show: boolean) => void;
   setShowMinimap: (show: boolean) => void;
   setShowPropertiesPanel: (show: boolean) => void;
   setZoomLevel: (level: number) => void;
+
+  // Execution controls
+  setIsExecuting: (executing: boolean) => void;
+  setIsDebugging: (debugging: boolean) => void;
+  setExecutionMode: (mode: 'run' | 'debug' | 'step') => void;
+  setCurrentExecutionId: (id: string | null) => void;
+  addExecutedNode: (nodeId: string) => void;
+  clearExecutedNodes: () => void;
+
+  // Breakpoint management
+  toggleBreakpoint: (nodeId: string) => void;
+  clearAllBreakpoints: () => void;
+  getBreakpointNodes: () => string[];
+
+  // Node execution status
+  setNodeExecutionStatus: (nodeId: string, status: WorkflowNode['executionStatus']) => void;
+  setNodeExecutionData: (nodeId: string, data: any) => void;
+  clearAllExecutionData: () => void;
 }
+
+export interface WorkflowValidationResult {
+  is_valid: boolean;
+  errors: Array<{
+    type: 'node' | 'edge' | 'flow';
+    node_id?: string;
+    edge_id?: string;
+    message: string;
+    severity: 'error' | 'warning';
+    suggestion?: string;
+  }>;
+  warnings: Array<{
+    type: 'node' | 'edge' | 'flow';
+    node_id?: string;
+    edge_id?: string;
+    message: string;
+    suggestion?: string;
+  }>;
+}
+
+export interface WorkflowExecutionRequest {
+  workflow_id: string;
+  inputs: Record<string, any>;
+  mode?: 'run' | 'debug' | 'step';
+  breakpoints?: string[];
+}
+
+export interface WorkflowExecutionResponse {
+  execution_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  current_node?: string;
+  executed_nodes: string[];
+  outputs?: Record<string, any>;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  workflow: Workflow;
+  is_public: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  usage_count: number;
+  rating: number;
+}
+
+export interface NodeTypeDefinition {
+  type: WorkflowNode['type'];
+  name: string;
+  description: string;
+  icon: string;
+  category: 'input' | 'processing' | 'output' | 'logic';
+  defaultData: Record<string, any>;
+  inputs: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    default?: any;
+  }>;
+  outputs: Array<{
+    name: string;
+    type: string;
+  }>;
+  validation?: (data: any) => { valid: boolean; errors?: string[] };
+}
+
+export type NodeType = 'input' | 'output' | 'agent' | 'condition';

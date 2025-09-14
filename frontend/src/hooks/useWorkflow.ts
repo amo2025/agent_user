@@ -15,6 +15,13 @@ const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   showPropertiesPanel: true,
   zoomLevel: 1,
 
+  // Execution state
+  isExecuting: false,
+  isDebugging: false,
+  currentExecutionId: null,
+  executedNodes: [],
+  executionMode: 'run' as 'run' | 'debug' | 'step',
+
   // Actions
   setCurrentWorkflow: (workflow) => set({ currentWorkflow: workflow }),
 
@@ -275,7 +282,109 @@ const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   setShowGrid: (show) => set({ showGrid: show }),
   setShowMinimap: (show) => set({ showMinimap: show }),
   setShowPropertiesPanel: (show) => set({ showPropertiesPanel: show }),
-  setZoomLevel: (level) => set({ zoomLevel: Math.max(0.1, Math.min(2, level)) })
+  setZoomLevel: (level) => set({ zoomLevel: Math.max(0.1, Math.min(2, level)) }),
+
+  // Execution controls
+  setIsExecuting: (executing) => set({ isExecuting: executing }),
+  setIsDebugging: (debugging) => set({ isDebugging: debugging }),
+  setExecutionMode: (mode) => set({ executionMode: mode }),
+  setCurrentExecutionId: (id) => set({ currentExecutionId: id }),
+  addExecutedNode: (nodeId) => set((state) => ({
+    executedNodes: [...state.executedNodes, nodeId]
+  })),
+  clearExecutedNodes: () => set({ executedNodes: [] }),
+
+  // Breakpoint management
+  toggleBreakpoint: (nodeId) => set((state) => {
+    if (!state.currentWorkflow) return state;
+
+    const updatedNodes = state.currentWorkflow.nodes.map(node =>
+      node.id === nodeId ? { ...node, breakpoint: !node.breakpoint } : node
+    );
+
+    return {
+      currentWorkflow: {
+        ...state.currentWorkflow,
+        nodes: updatedNodes,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }),
+
+  clearAllBreakpoints: () => set((state) => {
+    if (!state.currentWorkflow) return state;
+
+    const updatedNodes = state.currentWorkflow.nodes.map(node => ({
+      ...node,
+      breakpoint: false
+    }));
+
+    return {
+      currentWorkflow: {
+        ...state.currentWorkflow,
+        nodes: updatedNodes,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }),
+
+  getBreakpointNodes: () => {
+    const state = get();
+    if (!state.currentWorkflow) return [];
+    return state.currentWorkflow.nodes.filter(node => node.breakpoint).map(node => node.id);
+  },
+
+  // Node execution status
+  setNodeExecutionStatus: (nodeId, status) => set((state) => {
+    if (!state.currentWorkflow) return state;
+
+    const updatedNodes = state.currentWorkflow.nodes.map(node =>
+      node.id === nodeId ? { ...node, executionStatus: status } : node
+    );
+
+    return {
+      currentWorkflow: {
+        ...state.currentWorkflow,
+        nodes: updatedNodes,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }),
+
+  setNodeExecutionData: (nodeId, data) => set((state) => {
+    if (!state.currentWorkflow) return state;
+
+    const updatedNodes = state.currentWorkflow.nodes.map(node =>
+      node.id === nodeId ? { ...node, executionData: data } : node
+    );
+
+    return {
+      currentWorkflow: {
+        ...state.currentWorkflow,
+        nodes: updatedNodes,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }),
+
+  clearAllExecutionData: () => set((state) => {
+    if (!state.currentWorkflow) return state;
+
+    const updatedNodes = state.currentWorkflow.nodes.map(node => ({
+      ...node,
+      executionStatus: undefined,
+      executionData: undefined
+    }));
+
+    return {
+      currentWorkflow: {
+        ...state.currentWorkflow,
+        nodes: updatedNodes,
+        updated_at: new Date().toISOString()
+      },
+      executedNodes: []
+    };
+  })
 }));
 
 // Helper function to check for cycles in workflow graph
