@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端性能测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background-color: #fafafa;
+        }
+        .test-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .test-button:hover {
+            background-color: #0056b3;
+        }
+        .test-button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric:last-child {
+            border-bottom: none;
+        }
+        .metric-label {
+            font-weight: bold;
+        }
+        .metric-value {
+            color: #666;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Agent User Platform 前端性能测试</h1>
+
+        <div class="test-section">
+            <h3>页面加载性能测试</h3>
+            <p>测试各个页面的加载时间，包括FCP、LCP、TTI等关键指标</p>
+            <button class="test-button" onclick="runPageLoadTest()">运行页面加载测试</button>
+            <div id="pageLoadResults" class="results" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>组件渲染性能测试</h3>
+            <p>测试React组件的渲染性能，包括平均渲染时间和性能波动</p>
+            <button class="test-button" onclick="runComponentRenderTest()">运行组件渲染测试</button>
+            <div id="componentRenderResults" class="results" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>内存使用测试</h3>
+            <p>监控内存使用情况，检测内存泄漏和异常增长</p>
+            <button class="test-button" onclick="runMemoryTest()">运行内存测试</button>
+            <div id="memoryResults" class="results" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>API性能测试</h3>
+            <p>测试后端API的响应时间和稳定性</p>
+            <button class="test-button" onclick="runAPITest()">运行API测试</button>
+            <div id="apiResults" class="results" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>完整性能测试套件</h3>
+            <p>运行所有性能测试并生成完整报告</p>
+            <button class="test-button" onclick="runFullTestSuite()">运行完整测试套件</button>
+            <div id="fullTestProgress" class="progress" style="display: none;">
+                <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+            </div>
+            <div id="fullTestResults" class="results" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>实时性能监控</h3>
+            <p>实时监控页面性能指标</p>
+            <button class="test-button" onclick="startRealTimeMonitoring()">开始实时监控</button>
+            <button class="test-button" onclick="stopRealTimeMonitoring()">停止监控</button>
+            <div id="realTimeMetrics" class="results"></div>
+        </div>
+    </div>
+
+    <script src="frontend_performance_test.js"></script>
+    <script>
+        let monitoringInterval;
+        let isMonitoring = false;
+
+        // 页面加载测试
+        async function runPageLoadTest() {
+            const button = event.target;
+            const resultsDiv = document.getElementById('pageLoadResults');
+
+            button.disabled = true;
+            button.textContent = '测试中...';
+            resultsDiv.style.display = 'block';
+            resultsDiv.textContent = '正在执行页面加载性能测试...';
+
+            try {
+                const tester = new FrontendPerformanceTester();
+                await tester.testPageLoadPerformance();
+
+                const results = tester.results.pageLoad;
+                let output = '📊 页面加载性能测试结果:\n\n';
+
+                for (const [url, data] of Object.entries(results)) {
+                    output += `页面: ${url}\n`;
+                    output += `  加载时间: ${data.loadTime.toFixed(2)}ms\n`;
+                    if (data.vitals) {
+                        output += `  FCP: ${data.vitals.fcp ? data.vitals.fcp.toFixed(2) + 'ms' : 'N/A'}\n`;
+                        output += `  LCP: ${data.vitals.lcp ? data.vitals.lcp.toFixed(2) + 'ms' : 'N/A'}\n`;
+                        output += `  CLS: ${data.vitals.cls ? data.vitals.cls.toFixed(4) : 'N/A'}\n`;
+                    }
+                    output += '\n';
+                }
+
+                resultsDiv.textContent = output;
+            } catch (error) {
+                resultsDiv.textContent = `❌ 测试失败: ${error.message}`;
+            } finally {
+                button.disabled = false;
+                button.textContent = '运行页面加载测试';
+            }
+        }
+
+        // 组件渲染测试
+        async function runComponentRenderTest() {
+            const button = event.target;
+            const resultsDiv = document.getElementById('componentRenderResults');
+
+            button.disabled = true;
+            button.textContent = '测试中...';
+            resultsDiv.style.display = 'block';
+            resultsDiv.textContent = '正在执行组件渲染性能测试...';
+
+            try {
+                const tester = new FrontendPerformanceTester();
+                await tester.testComponentRenderPerformance();
+
+                const results = tester.results.componentRender;
+                let output = '⚛️ React组件渲染性能测试结果:\n\n';
+
+                for (const [component, data] of Object.entries(results)) {
+                    output += `组件: ${component}\n`;
+                    output += `  平均渲染时间: ${data.avgRenderTime.toFixed(2)}ms\n`;
+                    output += `  最快渲染: ${data.minRenderTime.toFixed(2)}ms\n`;
+                    output += `  最慢渲染: ${data.maxRenderTime.toFixed(2)}ms\n`;
+                    output += `  渲染次数: ${data.renderTimes.length}\n\n`;
+                }
+
+                resultsDiv.textContent = output;
+            } catch (error) {
+                resultsDiv.textContent = `❌ 测试失败: ${error.message}`;
+            } finally {
+                button.disabled = false;
+                button.textContent = '运行组件渲染测试';
+            }
+        }
+
+        // 内存测试
+        async function runMemoryTest() {
+            const button = event.target;
+            const resultsDiv = document.getElementById('memoryResults');
+
+            button.disabled = true;
+            button.textContent = '测试中...';
+            resultsDiv.style.display = 'block';
+            resultsDiv.textContent = '正在执行内存使用测试...';
+
+            try {
+                const tester = new FrontendPerformanceTester();
+                await tester.testMemoryUsage();
+
+                const results = tester.results.memoryUsage;
+                let output = '💾 内存使用测试结果:\n\n';
+
+                output += `初始内存使用: ${(results.initialMemory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB\n`;
+                output += `内存增长: ${(results.memoryGrowth / 1024 / 1024).toFixed(2)}MB\n\n`;
+
+                output += '操作序列内存变化:\n';
+                results.memorySnapshots.forEach(snapshot => {
+                    output += `  ${snapshot.operation}: ${(snapshot.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB\n`;
+                });
+
+                resultsDiv.textContent = output;
+            } catch (error) {
+                resultsDiv.textContent = `❌ 测试失败: ${error.message}`;
+            } finally {
+                button.disabled = false;
+                button.textContent = '运行内存测试';
+            }
+        }
+
+        // API测试
+        async function runAPITest() {
+            const button = event.target;
+            const resultsDiv = document.getElementById('apiResults');
+
+            button.disabled = true;
+            button.textContent = '测试中...';
+            resultsDiv.style.display = 'block';
+            resultsDiv.textContent = '正在执行API性能测试...';
+
+            try {
+                const tester = new FrontendPerformanceTester();
+                await tester.testAPIPerformance();
+
+                const results = tester.results.apiPerformance;
+                let output = '🌐 API性能测试结果:\n\n';
+
+                for (const [endpoint, data] of Object.entries(results)) {
+                    output += `接口: ${endpoint}\n`;
+                    output += `  平均响应时间: ${data.avgResponseTime.toFixed(2)}ms\n`;
+                    output += `  最快响应: ${data.minResponseTime.toFixed(2)}ms\n`;
+                    output += `  最慢响应: ${data.maxResponseTime.toFixed(2)}ms\n`;
+                    output += `  测试次数: ${data.responseTimes.length}\n\n`;
+                }
+
+                resultsDiv.textContent = output;
+            } catch (error) {
+                resultsDiv.textContent = `❌ 测试失败: ${error.message}`;
+            } finally {
+                button.disabled = false;
+                button.textContent = '运行API测试';
+            }
+        }
+
+        // 完整测试套件
+        async function runFullTestSuite() {
+            const button = event.target;
+            const progressDiv = document.getElementById('fullTestProgress');
+            const progressBar = document.getElementById('progressBar');
+            const resultsDiv = document.getElementById('fullTestResults');
+
+            button.disabled = true;
+            button.textContent = '测试中...';
+            progressDiv.style.display = 'block';
+            resultsDiv.style.display = 'block';
+            resultsDiv.textContent = '正在执行完整性能测试套件...';
+
+            try {
+                const tester = new FrontendPerformanceTester();
+
+                // 模拟进度更新
+                const tests = [
+                    { name: '页面加载测试', fn: () => tester.testPageLoadPerformance() },
+                    { name: '组件渲染测试', fn: () => tester.testComponentRenderPerformance() },
+                    { name: '内存使用测试', fn: () => tester.testMemoryUsage() },
+                    { name: 'API性能测试', fn: () => tester.testAPIPerformance() }
+                ];
+
+                for (let i = 0; i < tests.length; i++) {
+                    const test = tests[i];
+                    resultsDiv.textContent = `正在执行: ${test.name}...`;
+                    progressBar.style.width = `${((i + 1) / tests.length) * 100}%`;
+
+                    await test.fn();
+                }
+
+                const report = tester.generateReport();
+                let output = '📋 完整性能测试报告:\n\n';
+
+                output += `测试时间: ${report.timestamp}\n`;
+                output += `平均页面加载时间: ${report.summary.avgPageLoadTime.toFixed(2)}ms\n`;
+                output += `平均组件渲染时间: ${report.summary.avgRenderTime.toFixed(2)}ms\n`;
+                output += `内存增长: ${(report.summary.memoryGrowth / 1024 / 1024).toFixed(2)}MB\n\n`;
+
+                output += '📊 详细测试结果:\n';
+                output += JSON.stringify(report.details, null, 2);
+
+                resultsDiv.textContent = output;
+            } catch (error) {
+                resultsDiv.textContent = `❌ 测试失败: ${error.message}`;
+            } finally {
+                button.disabled = false;
+                button.textContent = '运行完整测试套件';
+                progressDiv.style.display = 'none';
+                progressBar.style.width = '0%';
+            }
+        }
+
+        // 实时监控
+        function startRealTimeMonitoring() {
+            if (isMonitoring) return;
+
+            isMonitoring = true;
+            const resultsDiv = document.getElementById('realTimeMetrics');
+            resultsDiv.textContent = '实时监控已启动...';
+
+            monitoringInterval = setInterval(() => {
+                if (performance.memory) {
+                    const memory = performance.memory;
+                    const now = new Date().toLocaleTimeString();
+
+                    resultsDiv.innerHTML = `
+                        <div class="metric">
+                            <span class="metric-label">时间:</span>
+                            <span class="metric-value">${now}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">JS堆使用:</span>
+                            <span class="metric-value">${(memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">JS堆总量:</span>
+                            <span class="metric-value">${(memory.totalJSHeapSize / 1024 / 1024).toFixed(2)}MB</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">JS堆限制:</span>
+                            <span class="metric-value">${(memory.jsHeapSizeLimit / 1024 / 1024).toFixed(2)}MB</span>
+                        </div>
+                    `;
+                }
+            }, 1000);
+        }
+
+        function stopRealTimeMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+                isMonitoring = false;
+                document.getElementById('realTimeMetrics').textContent = '实时监控已停止';
+            }
+        }
+
+        // 页面加载时自动运行一些基本测试
+        window.addEventListener('load', () => {
+            console.log('🚀 前端性能测试工具已加载');
+            console.log('💡 提示: 使用 Chrome DevTools 的 Performance 标签页可以获得更详细的性能数据');
+        });
+    </script>
+</body>
+</html>
